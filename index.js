@@ -229,6 +229,7 @@ class RedAlertPlugin {
     const mediaUrl = isTest ? `${this.baseUrl}/test-video` : `${this.baseUrl}/alert-video`;
 
     devices.forEach(device => {
+      device.setVolume((this.chromecastVolume / 100))
       device.play(mediaUrl, (err) => {
         if (err) {
           this.log.error(`Error playing media on ${device.friendlyName}: ${err}`);
