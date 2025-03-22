@@ -387,7 +387,7 @@ class RedAlertPlugin {
     this.server = express();
 
     // Serve static files from the media directory
-    const mediaDir = path.join(this.api.user.storagePath(), 'red-alert-media');
+    const mediaDir = path.join(this.api.user.storagePath(), 'node_modules/homebridge-red-alert', 'media');
     this.server.use(express.static(mediaDir));
 
     // Routes for media files
