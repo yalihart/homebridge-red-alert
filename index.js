@@ -453,5 +453,6 @@ module.exports = (api) => {
   Service = api.hap.Service;
   Characteristic = api.hap.Characteristic;
 
-  api.registerAccessory('homebridge-red-alert', 'RedAlert', RedAlertPlugin);
+  api.registerPlatform('homebridge-red-alert', 'RedAlert', RedAlertPlugin);
+
 };

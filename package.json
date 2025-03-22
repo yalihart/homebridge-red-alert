@@ -10,9 +10,6 @@
     "security",
     "chromecast"
   ],
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "author": "Yali Hart",
   "license": "ISC",
   "dependencies": {
@@ -23,6 +20,7 @@
     "ws": "^8.18.1"
   },
   "engines": {
-    "homebridge": "^1.8.0"
+    "homebridge": "^1.8.0",
+    "node": ">=18.0.0"
   }
 }
