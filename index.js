@@ -8,7 +8,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const express = require('express');
 const {Client} = require('castv2');
-const mdns = require('mdns');
+const mdns = require('mdns-js');
 
 let Service, Characteristic;
 
