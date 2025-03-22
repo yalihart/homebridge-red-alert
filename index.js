@@ -8,7 +8,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const express = require('express');
 const {Client} = require('castv2');
-const mdns = require('mdns-js');
+const mdns = require('mdns');
 
 let Service, Characteristic;
 
@@ -216,20 +216,21 @@ class RedAlertPlugin {
     this.chromecastDevices = [];
 
     const browser = mdns.createBrowser(mdns.tcp('googlecast'));
-    browser.on('ready', () => browser.discover());
 
-    browser.on('update', (service) => {
-      if (!service.addresses || service.addresses.length === 0 || !service.txt || !service.txt.id || !service.txt.id.startsWith('Chromecast-')) return;
+    browser.on('serviceUp', (service) => {
+      if (!service.addresses || service.addresses.length === 0) return;
 
       const host = service.addresses[0];
       const port = service.port || 8009; // Default CASTV2 port
-      const name = service.name || 'Unnamed Chromecast';
+      const name = service.name || 'Unnamed Device';
 
       if (!this.chromecastDevices.some(d => d.host === host && d.port === port)) {
-        this.log.info(`Found Chromecast: ${name} at ${host}:${port}`);
+        this.log.info(`Found device: ${name} at ${host}:${port}`);
         this.chromecastDevices.push({name, host, port});
       }
     });
+
+    browser.start();
 
     setTimeout(() => {
       browser.stop();
@@ -262,7 +263,7 @@ class RedAlertPlugin {
     const client = new Client();
 
     client.connect({host: device.host, port: device.port}, () => {
-      this.log.info(`Connected to Chromecast: ${device.name} at ${device.host}:${device.port}`);
+      this.log.info(`Connected to device: ${device.name} at ${device.host}:${device.port}`);
 
       // Create channels
       const connection = client.createChannel('sender-0', 'receiver-0', 'urn:x-cast:com.google.cast.tp.connection', 'JSON');
@@ -273,7 +274,7 @@ class RedAlertPlugin {
       // Establish connection
       connection.send({type: 'CONNECT'});
 
-      // Heartbeat to keep connection alive
+      // Start heartbeating
       const heartbeatInterval = setInterval(() => {
         heartbeat.send({type: 'PING'});
       }, 5000);
