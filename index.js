@@ -1,14 +1,13 @@
 /**
  * Homebridge Red Alert Plugin
- * A plugin for monitoring Israel's Red Alert system and sending notifications to Chromecast devices using castv2
+ * A plugin for monitoring Israel's Red Alert system and sending notifications to Chromecast devices using chromecast-api
  */
 
 const WebSocket = require('ws');
 const fs = require('fs-extra');
 const path = require('path');
 const express = require('express');
-const {Client} = require('castv2');
-const mdns = require('mdns-js');
+const ChromecastAPI = require('chromecast-api'); // NEW: using chromecast-api
 
 let Service, Characteristic;
 
@@ -25,7 +24,7 @@ class RedAlertPlugin {
     this.testSoundPath = config.testSoundPath || 'sounds/test.mp3';
     this.alertVideoPath = config.alertVideoPath || 'videos/alert.mp4';
     this.testVideoPath = config.testVideoPath || 'videos/test.mp4';
-    this.chromecastVolume = config.chromecastVolume || 30; // 0-100
+    this.chromecastVolume = config.chromecastVolume || 30; // Not used directly; chromecast-api does not expose volume in our example
     this.useChromecast = config.useChromecast !== false;
     this.chromecastTimeout = config.chromecastTimeout || 30; // seconds
     this.wsUrl = config.wsUrl || 'ws://ws.cumta.morhaviv.com:25565/ws';
@@ -37,11 +36,17 @@ class RedAlertPlugin {
     this.alertActiveCities = [];
     this.wsClient = null;
     this.reconnectTimer = null;
-    this.chromecastDevices = [];
 
-    // Setup media server and Chromecast discovery
+    // Setup media server
     this.setupMediaServer();
-    this.startChromecastDiscovery();
+
+    // Initialize Chromecast discovery using chromecast-api
+    if (this.useChromecast) {
+      this.chromecastClient = new ChromecastAPI();
+      this.chromecastClient.on('device', (device) => {
+        this.log.info(`Found Chromecast: ${device.friendlyName} at ${device.host}`);
+      });
+    }
 
     // Initialize WebSocket on launch
     if (this.api) {
@@ -211,120 +216,25 @@ class RedAlertPlugin {
     }
   }
 
-  startChromecastDiscovery() {
-    this.log.info('Starting Chromecast discovery');
-    this.chromecastDevices = [];
-
-    const browser = mdns.createBrowser(mdns.tcp('googlecast'));
-
-    browser.on('serviceUp', (service) => {
-      if (!service.addresses || service.addresses.length === 0) return;
-
-      const host = service.addresses[0];
-      const port = service.port || 8009; // Default CASTV2 port
-      const name = service.name || 'Unnamed Device';
-
-      if (!this.chromecastDevices.some(d => d.host === host && d.port === port)) {
-        this.log.info(`Found device: ${name} at ${host}:${port}`);
-        this.chromecastDevices.push({name, host, port});
-      }
-    });
-
-    browser.start();
-
-    setTimeout(() => {
-      browser.stop();
-      this.log.info(`Chromecast discovery completed. Found ${this.chromecastDevices.length} devices.`);
-    }, 10000);
-
-    setInterval(() => {
-      this.log.debug('Performing periodic Chromecast scan');
-      this.startChromecastDiscovery();
-    }, 60000);
-  }
-
   playChromecastMedia(isTest) {
-    if (this.chromecastDevices.length === 0) {
+    // Check if devices have been discovered
+    const devices = this.chromecastClient.devices;
+    if (!devices || devices.length === 0) {
       this.log.warn('No Chromecast devices found');
       return;
     }
 
     this.log.info(`Playing ${isTest ? 'test' : 'alert'} on Chromecast devices`);
-
     const mediaUrl = isTest ? `${this.baseUrl}/test-video` : `${this.baseUrl}/alert-video`;
-    const contentType = 'video/mp4';
 
-    this.chromecastDevices.forEach(device => {
-      this.castMedia(device, mediaUrl, contentType);
-    });
-  }
-
-  castMedia(device, mediaUrl, contentType) {
-    const client = new Client();
-
-    client.connect({host: device.host, port: device.port}, () => {
-      this.log.info(`Connected to device: ${device.name} at ${device.host}:${device.port}`);
-
-      // Create channels
-      const connection = client.createChannel('sender-0', 'receiver-0', 'urn:x-cast:com.google.cast.tp.connection', 'JSON');
-      const heartbeat = client.createChannel('sender-0', 'receiver-0', 'urn:x-cast:com.google.cast.tp.heartbeat', 'JSON');
-      const receiver = client.createChannel('sender-0', 'receiver-0', 'urn:x-cast:com.google.cast.receiver', 'JSON');
-      const media = client.createChannel('sender-0', 'receiver-0', 'urn:x-cast:com.google.cast.media', 'JSON');
-
-      // Establish connection
-      connection.send({type: 'CONNECT'});
-
-      // Start heartbeating
-      const heartbeatInterval = setInterval(() => {
-        heartbeat.send({type: 'PING'});
-      }, 5000);
-
-      // Launch Default Media Receiver
-      receiver.send({type: 'LAUNCH', appId: 'CC1AD845', requestId: 1});
-
-      receiver.on('message', (data) => {
-        if (data.type === 'RECEIVER_STATUS' && data.status && data.status.applications) {
-          const app = data.status.applications[0];
-          if (app && app.appId === 'CC1AD845') {
-            // Set volume
-            receiver.send({
-              type: 'SET_VOLUME',
-              volume: {level: this.chromecastVolume / 100},
-              requestId: 2
-            });
-
-            // Load media
-            media.send({
-              type: 'LOAD',
-              media: {
-                contentId: mediaUrl,
-                contentType: contentType,
-                streamType: 'BUFFERED'
-              },
-              autoplay: true,
-              requestId: 3
-            });
-
-            media.on('message', (data) => {
-              if (data.type === 'MEDIA_STATUS' && data.status && data.status[0].playerState === 'PLAYING') {
-                this.log.info(`Playing media on ${device.name}: ${mediaUrl}`);
-                setTimeout(() => {
-                  receiver.send({type: 'STOP', sessionId: app.sessionId, requestId: 4});
-                  clearInterval(heartbeatInterval);
-                  client.close();
-                  this.log.info(`Stopped media on ${device.name}`);
-                }, this.chromecastTimeout * 1000);
-              }
-            });
-          }
+    devices.forEach(device => {
+      device.play(mediaUrl, (err) => {
+        if (err) {
+          this.log.error(`Error playing media on ${device.friendlyName}: ${err}`);
+        } else {
+          this.log.info(`Playing media on ${device.friendlyName}: ${mediaUrl}`);
         }
       });
-    });
-
-    client.on('error', (err) => {
-      this.log.error(`Chromecast error for ${device.name}: ${err.message}`);
-      clearInterval(heartbeatInterval);
-      client.close();
     });
   }
 
