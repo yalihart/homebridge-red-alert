@@ -1,8 +1,15 @@
 {
-    "accessory": "RedAlert",
-    "name": "Red Alert",
-    "volume": 10,
-    "cities": [
-        "Tel Aviv"
+    "accessories": [
+        {
+            "accessory": "RedAlert",
+            "name": "Red Alert",
+            "cities": [
+                "ירושלים",
+                "תל אביב"
+            ],
+            "useChromecast": true,
+            "chromecastVolume": 30,
+            "serverPort": 8095
+        }
     ]
 }

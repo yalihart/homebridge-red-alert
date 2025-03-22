@@ -13,10 +13,11 @@
   "author": "Yali Hart",
   "license": "ISC",
   "dependencies": {
-    "castv2-client": "^1.2.0",
+    "castv2": "^0.1.10",
     "express": "^4.21.2",
     "fs-extra": "^11.3.0",
     "mdns-js": "^1.0.3",
+    "path": "^0.12.7",
     "ws": "^8.18.1"
   },
   "engines": {
