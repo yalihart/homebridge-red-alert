@@ -124,6 +124,7 @@ class RedAlertPlugin {
 
     this.wsClient.on('open', () => {
       this.log.info('WebSocket connected');
+      this.log.info('Selected Cities: ' + this.selectedCities)
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
