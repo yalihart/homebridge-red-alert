@@ -1,0 +1,8 @@
+{
+    "accessory": "RedAlert",
+    "name": "Red Alert",
+    "volume": 10,
+    "cities": [
+        "Tel Aviv"
+    ]
+}
