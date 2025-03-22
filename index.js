@@ -25,7 +25,7 @@ class RedAlertPlugin {
     this.testSoundPath = config.testSoundPath || './sounds/test.mp3';
     this.alertVideoPath = config.alertVideoPath || './videos/alert.mp4';
     this.testVideoPath = config.testVideoPath || './videos/test.mp4';
-    this.chromecastVolume = config.chromecastVolume || 0.5;
+    this.chromecastVolume = config.chromecastVolume || 30;
     this.useChromecast = config.useChromecast !== false;
     this.chromecastTimeout = config.chromecastTimeout || 30; // seconds
     this.wsUrl = config.wsUrl || 'ws://ws.cumta.morhaviv.com:25565/ws';
@@ -270,31 +270,29 @@ class RedAlertPlugin {
 
         const address = service.addresses[0];
         const name = service.name;
+        const port = service.port || 8008; // Default to 8008 if not provided
 
-        // Skip if we already have this device
-        if (this.cachedChromecastDevices.some(device => device.address === address)) {
+        // Skip duplicates
+        if (this.cachedChromecastDevices.some(device => device.address === address && device.port === port)) {
           return;
         }
 
-        this.log.info(`Found Chromecast: ${name} at ${address}`);
+        this.log.info(`Found Chromecast: ${name} at ${address}:${port}`);
         this.cachedChromecastDevices.push({
           name,
           address,
+          port,
           type: service.type && service.type.length ? service.type[0].name : 'unknown'
         });
       });
 
-      // Close browser after 10 seconds to avoid keeping it running
       setTimeout(() => {
         browser.stop();
         this.lastDeviceScan = Date.now();
       }, 10000);
     };
 
-    // Initial scan
     scanForDevices();
-
-    // Periodically scan for devices
     setInterval(() => {
       if (Date.now() - this.lastDeviceScan > this.deviceScanInterval) {
         this.log.debug('Performing periodic Chromecast scan');
@@ -304,7 +302,6 @@ class RedAlertPlugin {
   }
 
   playChromecastMedia(isTest) {
-    // Don't scan if we've recently done so
     if (Date.now() - this.lastDeviceScan > this.deviceScanInterval) {
       this.startChromecastDiscovery();
     }
@@ -316,32 +313,27 @@ class RedAlertPlugin {
       return;
     }
 
-    // Select media based on alert type and device type
     this.cachedChromecastDevices.forEach(device => {
       let mediaUrl;
-
-      // Determine if this is a video-capable Chromecast
       const isVideoCapable = device.type !== 'googlecast-audio';
 
       if (isVideoCapable) {
-        mediaUrl = isTest ?
-          `${this.baseUrl}/test-video` :
-          `${this.baseUrl}/alert-video`;
+        mediaUrl = isTest ? `${this.baseUrl}/test-video` : `${this.baseUrl}/alert-video`;
       } else {
-        mediaUrl = isTest ?
-          `${this.baseUrl}/test-sound` :
-          `${this.baseUrl}/alert-sound`;
+        mediaUrl = isTest ? `${this.baseUrl}/test-sound` : `${this.baseUrl}/alert-sound`;
       }
 
-      this.castMedia(device.address, mediaUrl, isVideoCapable);
+      this.castMedia(device, mediaUrl, isVideoCapable); // Pass device object
     });
   }
 
-  castMedia(host, mediaUrl, isVideo) {
+  castMedia(device, mediaUrl, isVideo) {
+    const host = device.address;
+    const port = device.port || 8008; // Fallback to 8008
     const client = new Client();
 
-    client.connect(host, () => {
-      this.log.info(`Connected to Chromecast at ${host}`);
+    client.connect({host, port}, () => {
+      this.log.info(`Connected to Chromecast at ${host}:${port}`);
 
       client.launch(DefaultMediaReceiver, (err, player) => {
         if (err) {
@@ -357,8 +349,7 @@ class RedAlertPlugin {
           streamType: 'BUFFERED',
         };
 
-        // Set volume to config volume
-        client.setVolume({level: (chromecastVolume / 100)}, (err) => {
+        client.setVolume({level: (this.chromecastVolume / 100)}, (err) => {
           if (err) this.log.error(`Error setting volume: ${err}`);
         });
 
@@ -368,8 +359,6 @@ class RedAlertPlugin {
           } else {
             this.log.info(`Playing media: ${mediaUrl}`);
           }
-
-          // Close after timeout
           setTimeout(() => {
             client.close();
           }, this.chromecastTimeout * 1000);
