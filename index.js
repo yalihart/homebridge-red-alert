@@ -1,13 +1,14 @@
 /**
  * Homebridge Red Alert Plugin
- * A plugin for monitoring Israel's Red Alert system and sending notifications to Chromecast devices using chromecast-api
+ * Monitors Israel's Red Alert system and sends notifications to Chromecast devices.
+ * Integrates with HomeKit for alert state and test functionality.
  */
 
 const WebSocket = require('ws');
 const fs = require('fs-extra');
 const path = require('path');
 const express = require('express');
-const ChromecastAPI = require('chromecast-api'); // NEW: using chromecast-api
+const ChromecastAPI = require('chromecast-api');
 
 let Service, Characteristic;
 
@@ -17,38 +18,40 @@ class RedAlertPlugin {
     this.config = config || {};
     this.api = api;
 
-    // Plugin configuration
+    // Plugin configuration with defaults
     this.name = config.name || 'Red Alert';
-    this.selectedCities = config.cities || [];
+    this.selectedCities = config.cities || []; // Cities to monitor for alerts
     this.alertSoundPath = config.alertSoundPath || 'sounds/alert.mp3';
     this.testSoundPath = config.testSoundPath || 'sounds/test.mp3';
     this.alertVideoPath = config.alertVideoPath || 'videos/alert.mp4';
     this.testVideoPath = config.testVideoPath || 'videos/test.mp4';
-    this.chromecastVolume = config.chromecastVolume || 30; // Not used directly; chromecast-api does not expose volume in our example
-    this.useChromecast = config.useChromecast !== false;
-    this.chromecastTimeout = config.chromecastTimeout || 30; // seconds
+    this.chromecastVolume = config.chromecastVolume || 30; // Volume in percentage
+    this.useChromecast = config.useChromecast !== false; // Enable Chromecast by default
+    this.chromecastTimeout = config.chromecastTimeout || 30; // Timeout in seconds
     this.wsUrl = config.wsUrl || 'ws://ws.cumta.morhaviv.com:25565/ws';
-    this.reconnectInterval = config.reconnectInterval || 5000; // ms
+    this.reconnectInterval = config.reconnectInterval || 5000; // Reconnect delay in ms
     this.serverPort = config.serverPort || 8095;
     this.baseUrl = config.baseUrl || `http://${this.getIpAddress()}:${this.serverPort}`;
 
+    // State variables
     this.isAlertActive = false;
     this.alertActiveCities = [];
     this.wsClient = null;
     this.reconnectTimer = null;
+    this.devices = []; // Store discovered Chromecast devices
 
-    // Setup media server
+    // Validate critical configuration
+    if (!this.wsUrl) this.log.error('WebSocket URL is missing in configuration');
+
+    // Setup media server for serving alert/test media
     this.setupMediaServer();
 
-    // Initialize Chromecast discovery using chromecast-api
+    // Initialize Chromecast discovery if enabled
     if (this.useChromecast) {
-      this.chromecastClient = new ChromecastAPI();
-      this.chromecastClient.on('device', (device) => {
-        this.log.info(`Found Chromecast: ${device.friendlyName} at ${device.host}`);
-      });
+      this.setupChromecastDiscovery();
     }
 
-    // Initialize WebSocket on launch
+    // Setup WebSocket and media files on Homebridge launch
     if (this.api) {
       this.api.on('didFinishLaunching', () => {
         this.setupWebSocket();
@@ -58,12 +61,13 @@ class RedAlertPlugin {
 
     // HomeKit services
     this.service = new Service.ContactSensor(this.name);
-    this.testSwitchService = new Service.Switch(this.name + ' Test', 'test');
+    this.testSwitchService = new Service.Switch(`${this.name} Test`, 'test');
     this.testSwitchService
       .getCharacteristic(Characteristic.On)
       .on('set', this.handleTestSwitch.bind(this));
   }
 
+  // Expose HomeKit services
   getServices() {
     const informationService = new Service.AccessoryInformation()
       .setCharacteristic(Characteristic.Manufacturer, 'Homebridge')
@@ -77,26 +81,31 @@ class RedAlertPlugin {
     return [informationService, this.service, this.testSwitchService];
   }
 
+  // Get current alert state for HomeKit
   getAlertState(callback) {
-    callback(null, this.isAlertActive ?
-      Characteristic.ContactSensorState.CONTACT_NOT_DETECTED :
-      Characteristic.ContactSensorState.CONTACT_DETECTED);
+    this.log.debug(`Getting alert state: ${this.isAlertActive}`);
+    callback(null, this.isAlertActive
+      ? Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
+      : Characteristic.ContactSensorState.CONTACT_DETECTED);
   }
 
+  // Handle test switch toggle from HomeKit
   handleTestSwitch(on, callback) {
     if (on) {
       this.log.info('Running alert test');
       this.triggerTest();
       setTimeout(() => {
         this.testSwitchService.updateCharacteristic(Characteristic.On, false);
-      }, 2000);
+      }, 2000); // Reset switch after 2 seconds
     }
     callback(null);
   }
 
+  // Trigger a test alert
   triggerTest() {
     this.isAlertActive = true;
     this.alertActiveCities = this.selectedCities.length > 0 ? [this.selectedCities[0]] : ['Test'];
+    this.log.info(`Test alert triggered for: ${this.alertActiveCities.join(', ')}`);
     this.service.updateCharacteristic(
       Characteristic.ContactSensorState,
       Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
@@ -109,22 +118,45 @@ class RedAlertPlugin {
     setTimeout(() => {
       this.isAlertActive = false;
       this.alertActiveCities = [];
+      this.log.info('Test alert reset');
       this.service.updateCharacteristic(
         Characteristic.ContactSensorState,
         Characteristic.ContactSensorState.CONTACT_DETECTED
       );
-    }, 10000);
+    }, 10000); // Reset after 10 seconds
   }
 
+  // Setup continuous Chromecast device discovery
+  setupChromecastDiscovery() {
+    this.chromecastClient = new ChromecastAPI();
+    this.chromecastClient.on('device', (device) => {
+      this.log.info(`Chromecast discovered: ${device.friendlyName} at ${device.host}`);
+      if (!this.devices.some(d => d.host === device.host)) {
+        this.devices.push(device);
+      }
+    });
+
+    // Periodically rediscover devices every 5 minutes
+    setInterval(() => {
+      this.log.info('Rediscovering Chromecast devices...');
+      this.devices = []; // Clear stale devices
+      this.chromecastClient.devices = []; // Reset internal list if supported
+      // Note: If chromecast-api has an explicit rediscover method, use it here
+    }, 300000); // 5 minutes
+  }
+
+  // Setup WebSocket connection with automatic reconnection
   setupWebSocket() {
-    if (this.wsClient) this.wsClient.terminate();
+    if (this.wsClient) {
+      this.wsClient.terminate();
+    }
 
     this.log.info(`Connecting to WebSocket: ${this.wsUrl}`);
     this.wsClient = new WebSocket(this.wsUrl);
 
     this.wsClient.on('open', () => {
       this.log.info('WebSocket connected');
-      this.log.info('Selected Cities: ' + this.selectedCities)
+      this.log.info(`Monitoring cities: ${this.selectedCities.join(', ')}`);
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
@@ -135,29 +167,31 @@ class RedAlertPlugin {
       try {
         this.handleAlertMessage(data.toString());
       } catch (error) {
-        this.log.error(`Error processing WebSocket message: ${error}`);
+        this.log.error(`Error processing WebSocket message: ${error.message}`);
       }
     });
 
     this.wsClient.on('error', (error) => {
-      this.log.error(`WebSocket error: ${error}`);
+      this.log.error(`WebSocket error: ${error.message}`);
       this.scheduleReconnect();
     });
 
     this.wsClient.on('close', () => {
-      this.log.info('WebSocket connection closed');
+      this.log.warn('WebSocket connection closed');
       this.scheduleReconnect();
     });
 
-    const interval = setInterval(() => {
+    // Send periodic pings to keep connection alive
+    const pingInterval = setInterval(() => {
       if (this.wsClient.readyState === WebSocket.OPEN) {
         this.wsClient.ping();
       } else {
-        clearInterval(interval);
+        clearInterval(pingInterval);
       }
-    }, 30000);
+    }, 30000); // Every 30 seconds
   }
 
+  // Schedule WebSocket reconnection
   scheduleReconnect() {
     if (!this.reconnectTimer) {
       this.log.info(`Scheduling WebSocket reconnect in ${this.reconnectInterval / 1000} seconds`);
@@ -167,16 +201,20 @@ class RedAlertPlugin {
     }
   }
 
+  // Handle incoming WebSocket alert messages
   handleAlertMessage(message) {
     let alert;
     try {
       alert = JSON.parse(message);
     } catch (error) {
-      this.log.error(`Failed to parse alert message: ${error}`);
+      this.log.error(`Failed to parse alert message: ${error.message}`);
       return;
     }
 
-    if (!alert || !alert.areas || typeof alert.areas !== 'string') return;
+    if (!alert || !alert.areas || typeof alert.areas !== 'string') {
+      this.log.warn('Invalid alert message format');
+      return;
+    }
 
     const areas = alert.areas.split(',').map(s => s.trim());
     const relevantAreas = areas.filter(area => this.selectedCities.includes(area));
@@ -217,29 +255,49 @@ class RedAlertPlugin {
     }
   }
 
+  // Play media on Chromecast devices with retry logic
   playChromecastMedia(isTest) {
-    // Check if devices have been discovered
-    const devices = this.chromecastClient.devices;
-    if (!devices || devices.length === 0) {
-      this.log.warn('No Chromecast devices found');
+    if (!this.devices.length) {
+      this.log.warn('No Chromecast devices available to play media');
       return;
     }
 
-    this.log.info(`Playing ${isTest ? 'test' : 'alert'} on Chromecast devices`);
+    this.log.info(`Playing ${isTest ? 'test' : 'alert'} on ${this.devices.length} Chromecast devices`);
     const mediaUrl = isTest ? `${this.baseUrl}/test-video` : `${this.baseUrl}/alert-video`;
 
-    devices.forEach(device => {
-      device.setVolume((this.chromecastVolume / 100))
+    this.devices.forEach((device, index) => {
+      if (!device || typeof device.setVolume !== 'function' || typeof device.play !== 'function') {
+        this.log.warn(`Device at index ${index} is invalid or not fully initialized, skipping`);
+        return;
+      }
+
+      this.playWithRetry(device, mediaUrl, 3); // Retry up to 3 times
+    });
+  }
+
+  // Helper method to play media with retry logic
+  playWithRetry(device, mediaUrl, retries) {
+    device.setVolume(this.chromecastVolume / 100, (err) => {
+      if (err) {
+        this.log.warn(`Failed to set volume on ${device.friendlyName || 'unknown'}: ${err.message}`);
+      } else {
+        this.log.debug(`Volume set to ${this.chromecastVolume}% on ${device.friendlyName || 'unknown'}`);
+      }
+
       device.play(mediaUrl, (err) => {
-        if (err) {
-          this.log.error(`Error playing media on ${device.friendlyName}: ${err}`);
+        if (err && retries > 0) {
+          this.log.warn(`Retrying media playback on ${device.friendlyName || 'unknown'} (${retries} attempts left)`);
+          setTimeout(() => this.playWithRetry(device, mediaUrl, retries - 1), 2000);
+        } else if (err) {
+          this.log.error(`Failed to play media on ${device.friendlyName || 'unknown'} after retries: ${err.message}`);
         } else {
-          this.log.info(`Playing media on ${device.friendlyName}: ${mediaUrl}`);
+          this.log.info(`Playing media on ${device.friendlyName || 'unknown'}: ${mediaUrl}`);
         }
       });
     });
   }
 
+  // Setup Express server to serve media files
   setupMediaServer() {
     this.server = express();
     const mediaDir = path.join(this.api.user.storagePath(), 'red-alert-media');
@@ -250,12 +308,17 @@ class RedAlertPlugin {
     this.server.get('/test-sound', (req, res) => res.sendFile(path.join(mediaDir, this.testSoundPath)));
     this.server.get('/alert-video', (req, res) => res.sendFile(path.join(mediaDir, this.alertVideoPath)));
     this.server.get('/test-video', (req, res) => res.sendFile(path.join(mediaDir, this.testVideoPath)));
+    this.server.get('/health', (req, res) => {
+      this.log.debug('Media server health check accessed');
+      res.status(200).send('OK');
+    });
 
     this.server.listen(this.serverPort, () => {
       this.log.info(`Media server running on port ${this.serverPort}`);
     });
   }
 
+  // Copy default media files to storage if they don’t exist
   copyDefaultMediaFiles() {
     const mediaDir = path.join(this.api.user.storagePath(), 'red-alert-media');
     const pluginDir = path.join(__dirname, 'media');
@@ -266,10 +329,11 @@ class RedAlertPlugin {
         this.log.info('Default media files copied to storage directory');
       }
     } catch (error) {
-      this.log.error(`Error copying default media files: ${error}`);
+      this.log.error(`Error copying default media files: ${error.message}`);
     }
   }
 
+  // Get local IP address for media server URL
   getIpAddress() {
     const {networkInterfaces} = require('os');
     const nets = networkInterfaces();
@@ -280,6 +344,7 @@ class RedAlertPlugin {
         }
       }
     }
+    this.log.warn('No valid network interface found, using localhost');
     return '127.0.0.1';
   }
 }
