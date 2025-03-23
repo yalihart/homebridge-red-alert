@@ -128,6 +128,16 @@ class RedAlertPlugin {
 
   // Setup continuous Chromecast device discovery
   setupChromecastDiscovery() {
+    this.initializeChromecastClient();
+    setInterval(() => {
+      this.log.info('Reinitializing Chromecast client for rediscovery...');
+      this.devices = [];
+      this.initializeChromecastClient();
+    }, 300000); // Every 5 minutes
+  }
+
+  // Initialize Chromecast client and set up event listener
+  initializeChromecastClient() {
     this.chromecastClient = new ChromecastAPI();
     this.chromecastClient.on('device', (device) => {
       this.log.info(`Chromecast discovered: ${device.friendlyName} at ${device.host}`);
@@ -135,14 +145,6 @@ class RedAlertPlugin {
         this.devices.push(device);
       }
     });
-
-    // Periodically rediscover devices every 5 minutes
-    setInterval(() => {
-      this.log.info('Rediscovering Chromecast devices...');
-      this.devices = []; // Clear stale devices
-      this.chromecastClient.devices = []; // Reset internal list if supported
-      // Note: If chromecast-api has an explicit rediscover method, use it here
-    }, 300000); // 5 minutes
   }
 
   // Setup WebSocket connection with automatic reconnection
@@ -257,6 +259,7 @@ class RedAlertPlugin {
 
   // Play media on Chromecast devices with retry logic
   playChromecastMedia(isTest) {
+    this.log.debug(`Attempting to play media on ${this.devices.length} Chromecast devices`);
     if (!this.devices.length) {
       this.log.warn('No Chromecast devices available to play media');
       return;
