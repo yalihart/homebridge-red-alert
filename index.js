@@ -280,23 +280,23 @@ class RedAlertPlugin {
 
   // Helper method to play media with retry logic
   playWithRetry(device, mediaUrl, retries) {
-    device.setVolume(this.chromecastVolume / 100, (err) => {
-      if (err) {
-        this.log.warn(`Failed to set volume on ${device.friendlyName || 'unknown'}: ${err.message}`);
+    device.play(mediaUrl, (err) => {
+      if (err && retries > 0) {
+        this.log.warn(`Retrying media playback on ${device.friendlyName || 'unknown'} (${retries} attempts left)`);
+        setTimeout(() => this.playWithRetry(device, mediaUrl, retries - 1), 2000);
+      } else if (err) {
+        this.log.error(`Failed to play media on ${device.friendlyName || 'unknown'} after retries: ${err.message}`);
       } else {
-        this.log.debug(`Volume set to ${this.chromecastVolume}% on ${device.friendlyName || 'unknown'}`);
+        this.log.info(`Playing media on ${device.friendlyName || 'unknown'}: ${mediaUrl}`);
+        // Set volume after playback starts
+        device.setVolume(this.chromecastVolume / 100, (err) => {
+          if (err) {
+            this.log.warn(`Failed to set volume on ${device.friendlyName || 'unknown'}: ${err.message}`);
+          } else {
+            this.log.debug(`Volume set to ${this.chromecastVolume}% on ${device.friendlyName || 'unknown'}`);
+          }
+        });
       }
-
-      device.play(mediaUrl, (err) => {
-        if (err && retries > 0) {
-          this.log.warn(`Retrying media playback on ${device.friendlyName || 'unknown'} (${retries} attempts left)`);
-          setTimeout(() => this.playWithRetry(device, mediaUrl, retries - 1), 2000);
-        } else if (err) {
-          this.log.error(`Failed to play media on ${device.friendlyName || 'unknown'} after retries: ${err.message}`);
-        } else {
-          this.log.info(`Playing media on ${device.friendlyName || 'unknown'}: ${mediaUrl}`);
-        }
-      });
     });
   }
 
