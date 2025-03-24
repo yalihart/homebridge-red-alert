@@ -289,11 +289,16 @@ class RedAlertPlugin {
       } else {
         this.log.info(`Playing media on ${device.friendlyName || 'unknown'}: ${mediaUrl}`);
         // Set volume after playback starts
-        device.setVolume(this.chromecastVolume / 100, (err) => {
+        const deviceVolume = this.config.chromecastVolumes?.find(
+          v => v.deviceName.toLowerCase() === device.friendlyName.toLowerCase()
+        )?.volume ?? this.config.chromecastVolume;
+
+        // Set the volume (Chromecast expects a value between 0 and 1, so divide by 100)
+        device.setVolume(deviceVolume / 100, (err) => {
           if (err) {
             this.log.warn(`Failed to set volume on ${device.friendlyName || 'unknown'}: ${err.message}`);
           } else {
-            this.log.debug(`Volume set to ${this.chromecastVolume}% on ${device.friendlyName || 'unknown'}`);
+            this.log.debug(`Volume set to ${deviceVolume}% on ${device.friendlyName || 'unknown'}`);
           }
         });
       }

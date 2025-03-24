@@ -1,15 +1,17 @@
 {
-    "accessories": [
+    "name": "Red Alert",
+    "useChromecast": true,
+    "chromecastVolume": 100,
+    "chromecastVolumes": [
         {
-            "accessory": "RedAlert",
-            "name": "Red Alert",
-            "cities": [
-                "ירושלים",
-                "תל אביב"
-            ],
-            "useChromecast": true,
-            "chromecastVolume": 30,
-            "serverPort": 8095
+            "deviceName": "Yali's TV",
+            "volume": 40
+        },
+        {
+            "deviceName": "Bedroom TV",
+            "volume": 40
         }
-    ]
+    ],
+    "chromecastTimeout": 30,
+    "serverPort": 8095
 }

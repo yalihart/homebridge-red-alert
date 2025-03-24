@@ -8214,7 +8214,32 @@
             "type": "integer",
             "default": 50,
             "minimum": 0,
-            "maximum": 100
+            "maximum": 100,
+            "description": "Default volume level for Chromecast devices (0-100). Can be overridden for specific devices using chromecastVolumes."
+        },
+        "chromecastVolumes": {
+            "title": "Chromecast Device Volumes",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "deviceName": {
+                        "type": "string",
+                        "description": "Friendly name of the Chromecast device"
+                    },
+                    "volume": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "description": "Volume level for this device (0-100)"
+                    }
+                },
+                "required": [
+                    "deviceName",
+                    "volume"
+                ]
+            },
+            "description": "Optional: Set specific volume levels for individual Chromecast devices. If not specified for a device, the default chromecastVolume will be used."
         },
         "chromecastTimeout": {
             "title": "Chromecast Timeout (seconds)",
