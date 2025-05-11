@@ -43,8 +43,6 @@ class RedAlertPlugin {
     // Validate critical configuration
     if (!this.wsUrl) this.log.error('WebSocket URL is missing in configuration');
 
-    // Setup media server for serving alert/test media
-    this.setupMediaServer();
 
     // Initialize Chromecast discovery if enabled
     if (this.useChromecast) {
@@ -54,6 +52,11 @@ class RedAlertPlugin {
     // Setup WebSocket and media files on Homebridge launch
     if (this.api) {
       this.api.on('didFinishLaunching', () => {
+        this.log.info('Homebridge Red Alert: System Did Finish Launching. Initializing components...');
+        this.setupMediaServer(); // Now called here
+        if (this.useChromecast) {
+          this.setupChromecastDiscovery(); // Now called here
+        }
         this.setupWebSocket();
         this.copyDefaultMediaFiles();
       });
@@ -138,13 +141,40 @@ class RedAlertPlugin {
 
   // Initialize Chromecast client and set up event listener
   initializeChromecastClient() {
-    this.chromecastClient = new ChromecastAPI();
-    this.chromecastClient.on('device', (device) => {
-      this.log.info(`Chromecast discovered: ${device.friendlyName} at ${device.host}`);
-      if (!this.devices.some(d => d.host === device.host)) {
-        this.devices.push(device);
-      }
-    });
+    try {
+      this.chromecastClient = new ChromecastAPI();
+  
+      this.chromecastClient.on('device', (device) => {
+        try {
+          if (!device || typeof device.host !== 'string' || typeof device.friendlyName !== 'string') {
+            this.log.warn(`Discovered Chromecast device with incomplete data: ${JSON.stringify(device)}. Skipping.`);
+            return;
+          }
+          if (typeof device.play !== 'function' || typeof device.setVolume !== 'function') {
+              this.log.warn(`Discovered Chromecast device '${device.friendlyName}' but it lacks essential playback functions. Skipping.`);
+              return;
+          }
+          this.log.info(`Chromecast discovered: ${device.friendlyName} at ${device.host}`);
+          if (!this.devices.some(d => d.host === device.host)) {
+            this.devices.push(device);
+          }
+        } catch (error) {
+          this.log.error(`Error processing discovered Chromecast device: ${error.message}`, error.stack);
+        }
+      });
+  
+      // Listen for global errors on the chromecastClient instance
+      this.chromecastClient.on('error', (err) => {
+          this.log.error(`ChromecastAPI client error: ${err.message}`, err.stack);
+          // You might want to implement logic to re-initialize or temporarily disable Chromecast features
+      });
+  
+  } catch (error) {
+      this.log.error(`Failed to initialize ChromecastAPI: ${error.message}`, error.stack);
+      this.useChromecast = false; // Fallback: disable Chromecast features if initialization fails
+      this.devices = [];
+      this.log.warn('Chromecast functionality has been disabled due to an initialization error.');
+  }
   }
 
   // Setup WebSocket connection with automatic reconnection
