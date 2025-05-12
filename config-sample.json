@@ -1,5 +1,9 @@
 {
+    "accessory": "RedAlert",
     "name": "Red Alert",
+    "cities": [
+        "רעננה"
+    ],
     "useChromecast": true,
     "chromecastVolume": 100,
     "chromecastVolumes": [
@@ -12,6 +16,5 @@
             "volume": 40
         }
     ],
-    "chromecastTimeout": 30,
     "serverPort": 8095
 }
