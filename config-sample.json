@@ -16,5 +16,21 @@
             "volume": 40
         }
     ],
-    "serverPort": 8095
+    "serverPort": 8095,
+    "enableEarlyWarning": true,
+    "earlyWarningStartHour": 10,
+    "earlyWarningEndHour": 20,
+    "earlyWarningVolumeReduction": 20,
+    "earlyWarningPollInterval": 8000,
+    "earlyWarningMaxAge": 30,
+    "orefHistoryUrl": "https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json",
+    "earlyWarningVideoPath": "videos/early_warning.mp4",
+    "earlyWarningSoundPath": "sounds/early_warning.mp3",
+    "wsUrl": "ws://ws.cumta.morhaviv.com:25565/ws",
+    "reconnectInterval": 5000,
+    "chromecastTimeout": 30,
+    "alertSoundPath": "sounds/alert.mp3",
+    "testSoundPath": "sounds/test.mp3",
+    "alertVideoPath": "videos/alert.mp4",
+    "testVideoPath": "videos/test.mp4"
 }
