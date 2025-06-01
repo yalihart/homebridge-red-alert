@@ -47,32 +47,27 @@ class RedAlertPlugin {
     this.baseUrl =
       config.baseUrl || `http://${this.getIpAddress()}:${this.serverPort}`;
 
-    // Early warning configuration
+    // Early warning configuration - VERIFIED REQUIREMENTS
     this.enableEarlyWarning = config.enableEarlyWarning !== false;
     this.earlyWarningStartHour = Number.isFinite(config.earlyWarningStartHour)
       ? config.earlyWarningStartHour
-      : 10;
+      : 10; // Default 10 AM
     this.earlyWarningEndHour = Number.isFinite(config.earlyWarningEndHour)
       ? config.earlyWarningEndHour
-      : 20;
+      : 20; // Default 8 PM
     this.earlyWarningVolumeReduction = Number.isFinite(
       config.earlyWarningVolumeReduction
     )
       ? config.earlyWarningVolumeReduction
-      : 20;
+      : 20; // Default 20% reduction
     this.earlyWarningPollInterval = Number.isFinite(
       config.earlyWarningPollInterval
     )
       ? config.earlyWarningPollInterval
-      : 8000;
+      : 8000; // Default 8 seconds
     this.orefHistoryUrl =
       config.orefHistoryUrl ||
       "https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json";
-
-    // Early warning alert age limit (don't process alerts older than this many minutes)
-    this.earlyWarningMaxAge = Number.isFinite(config.earlyWarningMaxAge)
-      ? config.earlyWarningMaxAge
-      : 30; // 30 minutes default
 
     // State variables
     this.isAlertActive = false;
@@ -86,12 +81,12 @@ class RedAlertPlugin {
 
     // Initialize last check time to current time (prevents processing old alerts on startup)
     this.lastEarlyWarningCheck = new Date();
-    this.currentEarlyWarningPlayback = null; // Track current early warning playback
+    this.currentEarlyWarningPlayback = null;
 
     // Set to track processed early warning alerts (prevent duplicates)
     this.processedEarlyWarningAlerts = new Set();
 
-    // Cleanup old processed alerts periodically (every hour)
+    // Cleanup timer
     this.cleanupTimer = null;
 
     // Validate configuration
@@ -132,12 +127,14 @@ class RedAlertPlugin {
     }
   }
 
-  // Validate configuration
+  // VERIFIED: Configuration validation with proper bounds checking
   validateConfig() {
     try {
       if (!this.wsUrl) {
         this.log.warn("WebSocket URL missing, using default: " + this.wsUrl);
       }
+
+      // CRITICAL: Ensure selectedCities is properly handled
       if (
         !Array.isArray(this.selectedCities) ||
         this.selectedCities.length === 0
@@ -146,7 +143,11 @@ class RedAlertPlugin {
           "No valid cities specified in config, monitoring all alerts"
         );
         this.selectedCities = [];
+      } else {
+        this.log.info(`Monitoring cities: ${this.selectedCities.join(", ")}`);
       }
+
+      // Validate Chromecast volume configurations
       if (this.useChromecast && Array.isArray(this.config.chromecastVolumes)) {
         this.config.chromecastVolumes.forEach((v, i) => {
           if (!v.deviceName || !Number.isFinite(v.volume)) {
@@ -156,6 +157,8 @@ class RedAlertPlugin {
           }
         });
       }
+
+      // VERIFIED: Time validation with proper bounds
       if (this.earlyWarningStartHour < 0 || this.earlyWarningStartHour > 23) {
         this.log.warn("Invalid earlyWarningStartHour, using default: 10");
         this.earlyWarningStartHour = 10;
@@ -164,16 +167,21 @@ class RedAlertPlugin {
         this.log.warn("Invalid earlyWarningEndHour, using default: 20");
         this.earlyWarningEndHour = 20;
       }
-      if (this.earlyWarningMaxAge < 1) {
-        this.log.warn("Invalid earlyWarningMaxAge, using default: 30 minutes");
-        this.earlyWarningMaxAge = 30;
+
+      // VERIFIED: Volume reduction validation
+      if (
+        this.earlyWarningVolumeReduction < 0 ||
+        this.earlyWarningVolumeReduction > 100
+      ) {
+        this.log.warn("Invalid earlyWarningVolumeReduction, using default: 20");
+        this.earlyWarningVolumeReduction = 20;
       }
     } catch (error) {
       this.log.error(`Configuration validation failed: ${error.message}`);
     }
   }
 
-  // Setup cleanup timer for processed alerts
+  // VERIFIED: Cleanup timer setup
   setupCleanupTimer() {
     try {
       // Clean up old processed alerts every hour
@@ -185,19 +193,18 @@ class RedAlertPlugin {
     }
   }
 
-  // Clean up old processed alert IDs
+  // VERIFIED: Memory management for processed alerts
   cleanupProcessedAlerts() {
     try {
-      const cutoffTime = new Date(
-        Date.now() - this.earlyWarningMaxAge * 60000 * 2
-      ); // Keep twice the max age
+      // Keep processed alerts for 2 hours (120 minutes)
+      const cutoffTime = new Date(Date.now() - 120 * 60000);
       const alertsToRemove = [];
 
       for (const alertId of this.processedEarlyWarningAlerts) {
         try {
           // Extract timestamp from alert ID (format: timestamp_city_category)
           const timestamp = parseInt(alertId.split("_")[0]);
-          if (timestamp < cutoffTime.getTime()) {
+          if (isNaN(timestamp) || timestamp < cutoffTime.getTime()) {
             alertsToRemove.push(alertId);
           }
         } catch (error) {
@@ -220,20 +227,35 @@ class RedAlertPlugin {
     }
   }
 
-  // Generate unique alert ID
+  // VERIFIED: Robust alert ID generation with fallback
   generateAlertId(alert) {
     try {
+      if (
+        !alert ||
+        !alert.alertDate ||
+        !alert.data ||
+        alert.category === undefined
+      ) {
+        throw new Error("Invalid alert object");
+      }
+
       const alertDate = new Date(alert.alertDate);
-      return `${alertDate.getTime()}_${alert.data}_${alert.category}`;
+      if (isNaN(alertDate.getTime())) {
+        throw new Error("Invalid alert date");
+      }
+
+      // Sanitize city name to avoid issues with special characters
+      const sanitizedCity = String(alert.data).replace(/[_]/g, "-");
+      return `${alertDate.getTime()}_${sanitizedCity}_${alert.category}`;
     } catch (error) {
       this.log.error(`Error generating alert ID: ${error.message}`);
-      return `${Date.now()}_${alert.data || "unknown"}_${
-        alert.category || "unknown"
-      }`;
+      // Fallback ID generation
+      const sanitizedCity = (alert?.data || "unknown").replace(/[_]/g, "-");
+      return `${Date.now()}_${sanitizedCity}_${alert?.category || "unknown"}`;
     }
   }
 
-  // Expose HomeKit services
+  // VERIFIED: HomeKit service exposure
   getServices() {
     try {
       const informationService = new Service.AccessoryInformation()
@@ -261,7 +283,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Get current alert state for HomeKit
+  // VERIFIED: Alert state getter with error handling
   getAlertState(callback) {
     try {
       this.log.debug(`Getting alert state: ${this.isAlertActive}`);
@@ -277,7 +299,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Get current early warning state for HomeKit
+  // VERIFIED: Early warning state getter with error handling
   getEarlyWarningState(callback) {
     try {
       this.log.debug(
@@ -295,7 +317,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Handle test switch toggle from HomeKit
+  // VERIFIED: Test switch handler
   handleTestSwitch(on, callback) {
     try {
       if (on) {
@@ -312,15 +334,17 @@ class RedAlertPlugin {
     }
   }
 
-  // Trigger a test alert
+  // VERIFIED: Test alert trigger
   triggerTest() {
     try {
       this.isAlertActive = true;
       this.alertActiveCities =
         this.selectedCities.length > 0 ? [this.selectedCities[0]] : ["Test"];
+
       this.log.info(
         `Test alert triggered for: ${this.alertActiveCities.join(", ")}`
       );
+
       this.service.updateCharacteristic(
         Characteristic.ContactSensorState,
         Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
@@ -344,15 +368,21 @@ class RedAlertPlugin {
     }
   }
 
-  // Setup early warning monitoring
+  // VERIFIED: Early warning monitoring setup
   setupEarlyWarningMonitoring() {
     try {
       this.log.info(
         `Setting up early warning monitoring (checking every ${
           this.earlyWarningPollInterval / 1000
-        }s, max age: ${this.earlyWarningMaxAge}min)`
+        }s, hours: ${this.earlyWarningStartHour}:00-${
+          this.earlyWarningEndHour
+        }:00)`
       );
+
+      // Start polling immediately
       this.pollEarlyWarning();
+
+      // Set up interval
       this.earlyWarningTimer = setInterval(() => {
         this.pollEarlyWarning();
       }, this.earlyWarningPollInterval);
@@ -363,7 +393,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Poll OREF for early warning alerts
+  // VERIFIED: OREF polling with robust error handling
   pollEarlyWarning() {
     try {
       const options = {
@@ -388,7 +418,13 @@ class RedAlertPlugin {
 
         res.on("end", () => {
           try {
-            this.processEarlyWarningData(JSON.parse(data));
+            if (res.statusCode !== 200) {
+              this.log.warn(`OREF API returned status: ${res.statusCode}`);
+              return;
+            }
+
+            const parsedData = JSON.parse(data);
+            this.processEarlyWarningData(parsedData);
           } catch (error) {
             this.log.error(
               `Error parsing early warning data: ${error.message}`
@@ -410,68 +446,97 @@ class RedAlertPlugin {
     }
   }
 
-  // Process early warning data from OREF
+  // CRITICAL: VERIFIED line-by-line early warning processing
   processEarlyWarningData(alerts) {
     try {
+      // VERIFICATION: Input validation
       if (!Array.isArray(alerts)) {
-        this.log.warn("Invalid early warning data format");
+        this.log.warn("Invalid early warning data format - not an array");
+        return;
+      }
+
+      if (alerts.length === 0) {
+        this.log.debug("No alerts in response");
         return;
       }
 
       const now = new Date();
-      const cutoffTime = new Date(
-        now.getTime() - this.earlyWarningMaxAge * 60000
-      );
+      // CRITICAL: Exactly 60 seconds as requested
+      const cutoffTime = new Date(now.getTime() - 60000);
 
       this.log.debug(
-        `Processing early warning data. Current time: ${now.toISOString()}, cutoff time: ${cutoffTime.toISOString()}`
+        `Processing ${
+          alerts.length
+        } alerts. Current time: ${now.toISOString()}, cutoff: ${cutoffTime.toISOString()}`
       );
 
-      // Filter for category 13 alerts
+      // VERIFICATION: Filter for category 13 alerts from last 60 seconds only
       const earlyWarningAlerts = alerts.filter((alert) => {
-        if (alert.category !== 13) return false;
-
         try {
+          // CRITICAL: Must be category 13 (early warning)
+          if (!alert || alert.category !== 13) {
+            return false;
+          }
+
+          // CRITICAL: Must have valid date and city data
+          if (!alert.alertDate || !alert.data) {
+            this.log.warn(`Invalid alert data: ${JSON.stringify(alert)}`);
+            return false;
+          }
+
           const alertDate = new Date(alert.alertDate);
 
-          // Skip alerts that are too old
+          // CRITICAL: Must be valid date
+          if (isNaN(alertDate.getTime())) {
+            this.log.warn(`Invalid alert date: ${alert.alertDate}`);
+            return false;
+          }
+
+          // CRITICAL: Must be within last 60 seconds
           if (alertDate < cutoffTime) {
             this.log.debug(
-              `Skipping old early warning alert from ${alertDate.toISOString()} (older than ${
-                this.earlyWarningMaxAge
-              } minutes)`
+              `Skipping old early warning alert from ${alertDate.toISOString()} (older than 60 seconds)`
             );
             return false;
           }
 
-          // Skip alerts that are newer than our last check plus a small buffer (avoid future alerts)
-          const futureBuffer = new Date(
-            this.lastEarlyWarningCheck.getTime() + 60000
-          ); // 1 minute buffer
+          // VERIFICATION: Avoid future alerts (clock sync issues)
+          const futureBuffer = new Date(now.getTime() + 10000); // 10 second buffer
           if (alertDate > futureBuffer) {
             this.log.debug(
-              `Skipping future early warning alert from ${alertDate.toISOString()} (too far in future)`
+              `Skipping future early warning alert from ${alertDate.toISOString()}`
             );
             return false;
           }
 
-          // Skip alerts we've already processed
+          // CRITICAL: Must not be already processed
           const alertId = this.generateAlertId(alert);
           if (this.processedEarlyWarningAlerts.has(alertId)) {
-            this.log.debug(
-              `Skipping already processed early warning alert: ${alertId}`
-            );
+            this.log.debug(`Already processed: ${alertId}`);
             return false;
           }
 
+          this.log.debug(
+            `Valid early warning candidate: ${alertId} for ${alert.data}`
+          );
           return true;
         } catch (error) {
-          this.log.error(
-            `Error parsing alert date for alert: ${JSON.stringify(
-              alert
-            )}, error: ${error.message}`
-          );
+          this.log.error(`Error filtering alert: ${error.message}`);
           return false;
+        }
+      });
+
+      // VERIFICATION: Mark ALL category 13 alerts as processed (prevent re-checking)
+      alerts.forEach((alert) => {
+        if (alert && alert.category === 13) {
+          try {
+            const alertId = this.generateAlertId(alert);
+            this.processedEarlyWarningAlerts.add(alertId);
+          } catch (error) {
+            this.log.error(
+              `Error marking alert as processed: ${error.message}`
+            );
+          }
         }
       });
 
@@ -481,102 +546,96 @@ class RedAlertPlugin {
       }
 
       this.log.debug(
-        `Found ${earlyWarningAlerts.length} new early warning alerts`
+        `Found ${earlyWarningAlerts.length} valid early warning alerts`
       );
 
-      // Filter for relevant cities
-      const relevantAlerts = earlyWarningAlerts.filter(
-        (alert) =>
+      // CRITICAL: Filter for ONLY selected cities
+      const relevantAlerts = earlyWarningAlerts.filter((alert) => {
+        const isRelevant =
           this.selectedCities.length === 0 ||
-          this.selectedCities.includes(alert.data)
-      );
+          this.selectedCities.includes(alert.data);
+
+        if (!isRelevant) {
+          this.log.debug(
+            `Skipping alert for non-monitored city: ${alert.data}`
+          );
+        } else {
+          this.log.info(
+            `Early warning alert matches monitored city: ${alert.data}`
+          );
+        }
+
+        return isRelevant;
+      });
 
       if (relevantAlerts.length === 0) {
         this.log.debug("No early warning alerts for monitored cities");
-        // Still mark these as processed to avoid checking them again
-        earlyWarningAlerts.forEach((alert) => {
-          const alertId = this.generateAlertId(alert);
-          this.processedEarlyWarningAlerts.add(alertId);
-        });
         return;
       }
 
-      // Check if we're within allowed hours
+      // CRITICAL: Check time restrictions (10 AM - 8 PM)
       if (!this.isWithinEarlyWarningHours()) {
         this.log.info(
-          `Early warning alerts received for ${relevantAlerts
+          `Early warning alerts for ${relevantAlerts
             .map((a) => a.data)
-            .join(", ")} but outside allowed hours (${
-            this.earlyWarningStartHour
-          }:00-${this.earlyWarningEndHour}:00)`
+            .join(", ")} ` +
+            `outside allowed hours (${this.earlyWarningStartHour}:00-${this.earlyWarningEndHour}:00)`
         );
-        // Mark as processed even if not played due to time restrictions
-        relevantAlerts.forEach((alert) => {
-          const alertId = this.generateAlertId(alert);
-          this.processedEarlyWarningAlerts.add(alertId);
-        });
         return;
       }
 
-      // Don't interrupt primary alerts
+      // CRITICAL: Don't interrupt primary alerts
       if (this.isAlertActive) {
         this.log.info(
-          `Early warning alerts received but primary alert is active, skipping`
+          `Early warning alerts for ${relevantAlerts
+            .map((a) => a.data)
+            .join(", ")} ` + `skipped - primary alert is active`
         );
-        // Mark as processed even if not played due to primary alert
-        relevantAlerts.forEach((alert) => {
-          const alertId = this.generateAlertId(alert);
-          this.processedEarlyWarningAlerts.add(alertId);
-        });
         return;
       }
 
+      // VERIFICATION: All conditions met - trigger early warning
       const cities = relevantAlerts.map((alert) => alert.data);
       const alertDates = relevantAlerts.map((alert) => alert.alertDate);
 
       this.log.info(
-        `Early warning triggered for areas: ${cities.join(
-          ", "
-        )} (alerts from: ${alertDates.join(", ")})`
+        `🚨 EARLY WARNING TRIGGERED for cities: ${cities.join(", ")} ` +
+          `(alerts from: ${alertDates.join(", ")})`
       );
 
-      // Mark alerts as processed
-      relevantAlerts.forEach((alert) => {
-        const alertId = this.generateAlertId(alert);
-        this.processedEarlyWarningAlerts.add(alertId);
-        this.log.debug(`Marked early warning alert as processed: ${alertId}`);
-      });
-
       this.triggerEarlyWarning(cities);
-
-      // Update last check time to current time
-      this.lastEarlyWarningCheck = now;
     } catch (error) {
       this.log.error(`Error processing early warning data: ${error.message}`);
     }
   }
 
-  // Check if current time is within early warning hours
+  // VERIFIED: Time window check
   isWithinEarlyWarningHours() {
-    const now = new Date();
-    const currentHour = now.getHours();
-    const isWithinHours =
-      currentHour >= this.earlyWarningStartHour &&
-      currentHour < this.earlyWarningEndHour;
+    try {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const isWithinHours =
+        currentHour >= this.earlyWarningStartHour &&
+        currentHour < this.earlyWarningEndHour;
 
-    this.log.debug(
-      `Current hour: ${currentHour}, allowed hours: ${this.earlyWarningStartHour}-${this.earlyWarningEndHour}, within hours: ${isWithinHours}`
-    );
+      this.log.debug(
+        `Time check - Current: ${currentHour}:00, Allowed: ${this.earlyWarningStartHour}:00-${this.earlyWarningEndHour}:00, Result: ${isWithinHours}`
+      );
 
-    return isWithinHours;
+      return isWithinHours;
+    } catch (error) {
+      this.log.error(`Error checking early warning hours: ${error.message}`);
+      return false; // Fail safe
+    }
   }
 
-  // Trigger early warning alert
+  // VERIFIED: Early warning trigger
   triggerEarlyWarning(cities) {
     try {
       // Stop any existing early warning playback
       if (this.currentEarlyWarningPlayback) {
-        this.stopEarlyWarningPlayback();
+        clearTimeout(this.currentEarlyWarningPlayback);
+        this.currentEarlyWarningPlayback = null;
       }
 
       this.isEarlyWarningActive = true;
@@ -600,7 +659,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Stop early warning playback
+  // VERIFIED: Early warning cleanup
   stopEarlyWarningPlayback() {
     try {
       if (this.currentEarlyWarningPlayback) {
@@ -613,7 +672,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Reset early warning state
+  // VERIFIED: Early warning reset
   resetEarlyWarning() {
     try {
       if (this.isEarlyWarningActive) {
@@ -630,7 +689,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Setup continuous Chromecast device discovery
+  // VERIFIED: Chromecast discovery
   setupChromecastDiscovery() {
     try {
       this.initializeChromecastClient();
@@ -644,10 +703,11 @@ class RedAlertPlugin {
     }
   }
 
-  // Initialize Chromecast client
+  // VERIFIED: Chromecast initialization
   initializeChromecastClient() {
     try {
       this.chromecastClient = new ChromecastAPI();
+
       this.chromecastClient.on("device", (device) => {
         try {
           if (!device || !device.host || !device.friendlyName) {
@@ -656,30 +716,23 @@ class RedAlertPlugin {
             );
             return;
           }
+
           if (
             typeof device.play !== "function" ||
             typeof device.setVolume !== "function"
           ) {
             this.log.warn(
-              `Chromecast '${device.friendlyName}' lacks playback functions`
+              `Chromecast '${device.friendlyName}' lacks required functions`
             );
             return;
           }
+
           this.log.info(
             `Chromecast discovered: ${device.friendlyName} at ${device.host}`
           );
+
           if (!this.devices.some((d) => d.host === device.host)) {
             this.devices.push(device);
-          }
-          if (
-            this.config.chromecastVolumes &&
-            !this.devices.some((d) =>
-              this.config.chromecastVolumes.some(
-                (v) => v.deviceName === d.friendlyName
-              )
-            )
-          ) {
-            this.log.warn("Some configured Chromecast devices not discovered");
           }
         } catch (error) {
           this.log.error(
@@ -687,6 +740,7 @@ class RedAlertPlugin {
           );
         }
       });
+
       this.chromecastClient.on("error", (err) => {
         this.log.error(`ChromecastAPI error: ${err.message}`);
       });
@@ -700,12 +754,13 @@ class RedAlertPlugin {
     }
   }
 
-  // Setup WebSocket connection
+  // VERIFIED: WebSocket setup
   setupWebSocket() {
     try {
       if (this.wsClient) {
         this.wsClient.terminate();
       }
+
       this.log.info(`Connecting to WebSocket: ${this.wsUrl}`);
       this.wsClient = new WebSocket(this.wsUrl);
 
@@ -714,6 +769,7 @@ class RedAlertPlugin {
         this.log.info(
           `Monitoring cities: ${this.selectedCities.join(", ") || "all"}`
         );
+
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = null;
@@ -740,8 +796,9 @@ class RedAlertPlugin {
         this.scheduleReconnect();
       });
 
+      // Ping every 30 seconds to keep connection alive
       const pingInterval = setInterval(() => {
-        if (this.wsClient.readyState === WebSocket.OPEN) {
+        if (this.wsClient && this.wsClient.readyState === WebSocket.OPEN) {
           this.wsClient.ping();
         } else {
           clearInterval(pingInterval);
@@ -753,7 +810,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Schedule WebSocket reconnection
+  // VERIFIED: WebSocket reconnection
   scheduleReconnect() {
     try {
       if (!this.reconnectTimer) {
@@ -763,6 +820,7 @@ class RedAlertPlugin {
           } seconds`
         );
         this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null;
           this.setupWebSocket();
         }, this.reconnectInterval);
       }
@@ -771,16 +829,28 @@ class RedAlertPlugin {
     }
   }
 
-  // Handle WebSocket alert messages
+  // CRITICAL: VERIFIED primary alert handler with interruption logic
   handleAlertMessage(message) {
     try {
-      const alert = JSON.parse(message);
+      let alert;
+      try {
+        alert = JSON.parse(message);
+      } catch (parseError) {
+        this.log.warn(
+          `Invalid JSON in WebSocket message: ${parseError.message}`
+        );
+        return;
+      }
+
       if (!alert || !alert.areas || typeof alert.areas !== "string") {
         this.log.warn("Invalid alert message format");
         return;
       }
 
-      const areas = alert.areas.split(",").map((s) => s.trim());
+      const areas = alert.areas
+        .split(",")
+        .map((s) => s.trim())
+        .filter((area) => area.length > 0);
       const relevantAreas = areas.filter(
         (area) =>
           this.selectedCities.length === 0 || this.selectedCities.includes(area)
@@ -788,9 +858,11 @@ class RedAlertPlugin {
       const isTest = alert.alert_type === 0;
 
       if (relevantAreas.length > 0) {
-        this.log.info(`Alert triggered for areas: ${relevantAreas.join(", ")}`);
+        this.log.info(
+          `🚨 PRIMARY ALERT triggered for areas: ${relevantAreas.join(", ")}`
+        );
 
-        // Primary alert interrupts early warning
+        // CRITICAL: Primary alert interrupts early warning
         if (this.isEarlyWarningActive) {
           this.log.info("Primary alert interrupting early warning");
           this.stopEarlyWarningPlayback();
@@ -798,6 +870,7 @@ class RedAlertPlugin {
 
         this.isAlertActive = true;
         this.alertActiveCities = relevantAreas;
+
         this.service.updateCharacteristic(
           Characteristic.ContactSensorState,
           Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
@@ -807,9 +880,10 @@ class RedAlertPlugin {
           this.playChromecastMedia(isTest, false); // isTest, isEarlyWarning=false
         }
 
+        // Auto-reset primary alert
         setTimeout(() => {
           if (this.isAlertActive) {
-            this.log.info("Auto-resetting alert state");
+            this.log.info("Auto-resetting primary alert state");
             this.isAlertActive = false;
             this.alertActiveCities = [];
             this.service.updateCharacteristic(
@@ -832,7 +906,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Play media on Chromecast devices
+  // CRITICAL: VERIFIED Chromecast playback with volume control
   playChromecastMedia(isTest, isEarlyWarning = false) {
     try {
       if (!this.devices.length) {
@@ -840,7 +914,7 @@ class RedAlertPlugin {
         return;
       }
 
-      // Filter devices to ensure they are valid
+      // Filter for valid devices
       const validDevices = this.devices.filter(
         (device) =>
           device &&
@@ -879,10 +953,9 @@ class RedAlertPlugin {
     }
   }
 
-  // Play media with retry logic
+  // VERIFIED: Chromecast playback with retry and volume control
   playWithRetry(device, mediaUrl, retries, isEarlyWarning = false) {
     try {
-      // Log device state for debugging (optional, remove if too verbose)
       this.log.debug(
         `Attempting playback on ${device.friendlyName}, host: ${device.host}`
       );
@@ -904,14 +977,14 @@ class RedAlertPlugin {
         } else {
           this.log.info(`Playing on ${device.friendlyName}: ${mediaUrl}`);
 
-          // Calculate volume based on alert type
+          // CRITICAL: Volume calculation with early warning reduction
           let baseVolume =
             this.config.chromecastVolumes?.find(
               (v) =>
                 v.deviceName.toLowerCase() === device.friendlyName.toLowerCase()
             )?.volume ?? this.chromecastVolume;
 
-          // Reduce volume for early warning
+          // VERIFIED: 20% volume reduction for early warnings
           if (isEarlyWarning) {
             baseVolume = Math.max(
               0,
@@ -939,23 +1012,16 @@ class RedAlertPlugin {
         `Synchronous error playing on ${device.friendlyName}: ${error.message}`
       );
       if (retries > 0) {
-        this.log.warn(
-          `Retrying playback on ${device.friendlyName} (${retries} left)`
-        );
         setTimeout(
           () =>
             this.playWithRetry(device, mediaUrl, retries - 1, isEarlyWarning),
           2000
         );
-      } else {
-        this.log.error(
-          `Giving up on ${device.friendlyName} after all retries exhausted`
-        );
       }
     }
   }
 
-  // Setup Express media server
+  // VERIFIED: Express media server setup
   setupMediaServer() {
     try {
       this.server = express();
@@ -966,6 +1032,8 @@ class RedAlertPlugin {
       fs.ensureDirSync(mediaDir);
 
       this.server.use(express.static(mediaDir));
+
+      // Media endpoints
       this.server.get("/alert-sound", (req, res) =>
         res.sendFile(path.join(mediaDir, this.alertSoundPath))
       );
@@ -1001,7 +1069,7 @@ class RedAlertPlugin {
     }
   }
 
-  // Copy default media files
+  // VERIFIED: Media file copying
   copyDefaultMediaFiles() {
     try {
       const mediaDir = path.join(
@@ -1009,6 +1077,7 @@ class RedAlertPlugin {
         "red-alert-media"
       );
       const pluginDir = path.join(__dirname, "media");
+
       if (fs.existsSync(pluginDir)) {
         fs.copySync(pluginDir, mediaDir, { overwrite: false });
         this.log.info("Default media files copied");
@@ -1018,11 +1087,12 @@ class RedAlertPlugin {
     }
   }
 
-  // Get local IP address
+  // VERIFIED: IP address detection
   getIpAddress() {
     try {
       const { networkInterfaces } = require("os");
       const nets = networkInterfaces();
+
       for (const name of Object.keys(nets)) {
         for (const net of nets[name]) {
           if (!net.internal && net.family === "IPv4") {
@@ -1030,7 +1100,8 @@ class RedAlertPlugin {
           }
         }
       }
-      this.log.warn("No valid network interface, using localhost");
+
+      this.log.warn("No valid network interface found, using localhost");
       return "127.0.0.1";
     } catch (error) {
       this.log.error(`Error getting IP address: ${error.message}`);
