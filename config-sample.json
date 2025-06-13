@@ -1,36 +1,40 @@
 {
-    "accessory": "RedAlert",
+    "chromecastVolume": 90,
+    "useChromecast": true,
+    "earlyWarningMaxAge": 30,
     "name": "Red Alert",
+    "wsUrl": "ws://ws.cumta.morhaviv.com:25565/ws",
+    "chromecastTimeout": 30,
+    "earlyWarningPollInterval": 8000,
+    "enableEarlyWarning": true,
+    "enableFlashAlerts": true,
+    "flashAlertVolumeReduction": 10,
+    "accessory": "RedAlert",
+    "earlyWarningVolumeReduction": 20,
+    "chromecastVolumes": [
+        {
+            "volume": 40,
+            "deviceName": "Yali's TV"
+        },
+        {
+            "volume": 40,
+            "deviceName": "Bedroom TV"
+        },
+        {
+            "volume": 40,
+            "deviceName": "tal bedroom tv"
+        }
+    ],
+    "orefHistoryUrl": "https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json",
+    "earlyWarningEndHour": 21,
+    "reconnectInterval": 5000,
+    "earlyWarningVideoPath": "videos/early.mp4",
+    "serverPort": 8095,
+    "earlyWarningStartHour": 9,
     "cities": [
         "רעננה"
     ],
-    "useChromecast": true,
-    "chromecastVolume": 100,
-    "chromecastVolumes": [
-        {
-            "deviceName": "Yali's TV",
-            "volume": 40
-        },
-        {
-            "deviceName": "Bedroom TV",
-            "volume": 40
-        }
-    ],
-    "serverPort": 8095,
-    "enableEarlyWarning": true,
-    "earlyWarningStartHour": 10,
-    "earlyWarningEndHour": 20,
-    "earlyWarningVolumeReduction": 30,
-    "earlyWarningPollInterval": 8000,
-    "earlyWarningMaxAge": 30,
-    "orefHistoryUrl": "https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json",
-    "earlyWarningVideoPath": "videos/early.mp4",
-    "earlyWarningSoundPath": "sounds/early_warning.mp3",
-    "wsUrl": "ws://ws.cumta.morhaviv.com:25565/ws",
-    "reconnectInterval": 5000,
-    "chromecastTimeout": 30,
-    "alertSoundPath": "sounds/alert.mp3",
-    "testSoundPath": "sounds/test.mp3",
     "alertVideoPath": "videos/alert.mp4",
-    "testVideoPath": "videos/test.mp4"
+    "testVideoPath": "videos/test.mp4",
+    "flashAlertShelterVideoPath": "videos/flash-shelter.mp4"
 }
