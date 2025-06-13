@@ -170,9 +170,14 @@ class RedAlertPlugin {
       }
 
       this.log.info(
-        `Early warning title filter: "${this.EARLY_WARNING_TITLE}"`
+        `Early warning title filter (cat 13): "${this.EARLY_WARNING_TITLE}"`
       );
-      this.log.info(`Flash alert title filter: "${this.FLASH_SHELTER_TITLE}"`);
+      this.log.info(
+        `Flash alert shelter title filter (cat 14): "${this.FLASH_SHELTER_TITLE}"`
+      );
+      this.log.info(
+        `Flash alert early warning title filter (cat 14): "${this.EARLY_WARNING_TITLE}"`
+      );
     } catch (error) {
       this.log.error(`Configuration validation failed: ${error.message}`);
     }
@@ -471,7 +476,7 @@ class RedAlertPlugin {
         } alerts for early warnings. Current time: ${now.toISOString()}, cutoff: ${cutoffTime.toISOString()}`
       );
 
-      // STRICT: Only category 13 with EXACT title match
+      // STRICT: Only category 13 with exact early warning title
       const earlyWarningAlerts = alerts.filter((alert) => {
         try {
           // Must be category 13
@@ -644,14 +649,17 @@ class RedAlertPlugin {
         } alerts for flash alerts. Current time: ${now.toISOString()}, cutoff: ${cutoffTime.toISOString()}`
       );
 
-      // STRICT: Only category 14 with EXACT title match for shelter alerts
+      // Category 14 with EITHER shelter title OR early warning title
       const flashAlerts = alerts.filter((alert) => {
         try {
           // Must be category 14
           if (!alert || alert.category !== 14) return false;
 
-          // Must have exact title match for shelter
-          if (!alert.title || alert.title !== this.FLASH_SHELTER_TITLE) {
+          // Must have exact title match for EITHER shelter OR early warning
+          const isShelterTitle = alert.title === this.FLASH_SHELTER_TITLE;
+          const isEarlyWarningTitle = alert.title === this.EARLY_WARNING_TITLE;
+
+          if (!alert.title || (!isShelterTitle && !isEarlyWarningTitle)) {
             if (alert.title && alert.category === 14) {
               this.log.debug(
                 `Ignoring category 14 alert with non-matching title: "${alert.title}"`
@@ -692,8 +700,9 @@ class RedAlertPlugin {
             return false;
           }
 
+          const titleType = isShelterTitle ? "SHELTER" : "EARLY_WARNING";
           this.log.debug(
-            `Valid flash alert candidate: ${alertId} - EXACT TITLE MATCH for ${alert.data}`
+            `Valid flash alert candidate: ${alertId} - ${titleType} TITLE MATCH for ${alert.data}`
           );
           return true;
         } catch (error) {
@@ -702,12 +711,13 @@ class RedAlertPlugin {
         }
       });
 
-      // Mark ALL matching category 14 alerts as processed
+      // Mark ALL matching category 14 alerts as processed (both title types)
       alerts.forEach((alert) => {
         if (
           alert &&
           alert.category === 14 &&
-          alert.title === this.FLASH_SHELTER_TITLE
+          (alert.title === this.FLASH_SHELTER_TITLE ||
+            alert.title === this.EARLY_WARNING_TITLE)
         ) {
           try {
             const alertId = this.generateAlertId(alert);
@@ -732,8 +742,12 @@ class RedAlertPlugin {
             `Skipping flash alert for non-monitored city: ${alert.data}`
           );
         } else {
+          const titleType =
+            alert.title === this.FLASH_SHELTER_TITLE
+              ? "SHELTER"
+              : "EARLY_WARNING";
           this.log.info(
-            `Flash alert matches monitored area: ${alert.data} - EXACT TITLE MATCH`
+            `Flash alert matches monitored area: ${alert.data} - ${titleType} TITLE MATCH`
           );
         }
         return isRelevant;
@@ -760,14 +774,16 @@ class RedAlertPlugin {
 
       const cities = relevantFlashAlerts.map((alert) => alert.data);
       const alertDates = relevantFlashAlerts.map((alert) => alert.alertDate);
+      const titles = relevantFlashAlerts.map((alert) => alert.title);
 
       this.log.info(
         `⚡ FLASH ALERT TRIGGERED for areas: ${cities.join(
           ", "
-        )} (EXACT TITLE: "${
-          this.FLASH_SHELTER_TITLE
-        }", alerts from: ${alertDates.join(", ")})`
+        )} (TITLES: ${titles.join(", ")}, alerts from: ${alertDates.join(
+          ", "
+        )})`
       );
+
       this.triggerFlashAlert(cities);
     } catch (error) {
       this.log.error(`Error processing flash alert data: ${error.message}`);
@@ -827,6 +843,7 @@ class RedAlertPlugin {
         Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
       );
       if (this.useChromecast) {
+        // All flash alerts use the shelter media for simplicity
         this.playChromecastMedia("flash-shelter");
       }
       this.currentFlashAlertPlayback = setTimeout(() => {
