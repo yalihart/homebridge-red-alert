@@ -74,9 +74,28 @@
             }
         }
     ],
-    "alertVideoPath": "videos/alert.mp4",
-    "earlyWarningVideoPath": "videos/early.mp4",
-    "flashAlertShelterVideoPath": "videos/flash-shelter.mp4",
-    "exitNotificationVideoPath": "videos/exit.mp4",
-    "testVideoPath": "videos/test.mp4"
+    "alertVideoPath": "alert.mp4",
+    "earlyWarningVideoPath": "early.mp4",
+    "flashAlertShelterVideoPath": "flash-shelter.mp4",
+    "exitNotificationVideoPath": "exit.mp4",
+    "testVideoPath": "test.mp4",
+    "shelterInstructions": {
+        "devices": [
+            {
+                "deviceName": "Shelter speaker",
+                "enabled": true,
+                "volumes": {
+                    "primary": 50,
+                    "early-warning": 60,
+                    "flash-shelter": 60,
+                    "exit-notification": 60
+                }
+            }
+        ],
+        "primaryFile": "ballistic_closure.mp4",
+        "earlyWarningFile": "ballistic_windows_closed.mp4",
+        "flashShelterFile": "ballistic_windows_closed.mp4",
+        "exitFile": "exit.mp4",
+        "minIntervalMinutes": 20
+    }
 }

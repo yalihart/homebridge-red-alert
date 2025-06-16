@@ -15,7 +15,7 @@
  * - Chromecast playback ends ONLY when the video/audio ends (using device 'finished' event)
  * - Robust, production-ready error handling and logging
  *
- * Author: YourName
+ * Author: Yali Hart & AI Friends (this is my first Homebridge plugin)
  * License: MIT
  */
 
@@ -68,7 +68,18 @@ const DEFAULT_MEDIA_PATHS = {
   flashAlertShelterVideoPath: "flash-shelter.mp4",
   exitNotificationVideoPath: "exit.mp4",
   testVideoPath: "test.mp4",
+  // Shelter instruction files
+  ballisticClosureFile: "ballistic_closure.mp4",
+  windowsClosedFile: "ballistic_windows_closed.mp4",
+  shelterExitFile: "exit.mp4",
 };
+
+this.ballisticClosureFile =
+  config.ballisticClosureFile || DEFAULT_MEDIA_PATHS.ballisticClosureFile;
+this.windowsClosedFile =
+  config.windowsClosedFile || DEFAULT_MEDIA_PATHS.windowsClosedFile;
+this.shelterExitFile =
+  config.shelterExitFile || DEFAULT_MEDIA_PATHS.shelterExitFile;
 
 class RedAlertPlugin {
   constructor(log, config, api) {
@@ -117,6 +128,22 @@ class RedAlertPlugin {
       ? config.chromecastVolumes
       : [];
     this.deviceOverrides = this.parseDeviceOverrides(this.chromecastVolumes);
+
+    // --- Shelter instructions (NEW LOGIC, add this) ---
+    const DEFAULT_SHELTER = {
+      devices: [],
+      primaryFile: "ballistic_closure.mp4",
+      earlyWarningFile: "ballistic_windows_closed.mp4",
+      flashShelterFile: "ballistic_windows_closed.mp4",
+      exitFile: "exit.mp4",
+      minIntervalMinutes: 20,
+    };
+    this.shelterInstructions = Object.assign(
+      {},
+      DEFAULT_SHELTER,
+      config.shelterInstructions || {}
+    );
+    this.shelterInstructionsLastPlayed = {}; // { deviceName: { alertType: timestamp } }
 
     // --- State for deduplication and HomeKit
     this.isAlertActive = false;
@@ -614,8 +641,11 @@ class RedAlertPlugin {
   }
 
   /**
-   * Chromecast playback ends only when file ends: uses device 'finished' event.
-   * Calls onAllComplete callback when all devices finished playback for this alert.
+   * Chromecast playback with advanced Shelter instructions logic.
+   * For shelter devices, plays ballistic instructions per type, with per-device cooldown and per-type file/volume.
+   * On first early-warning/flash-shelter: play windows closed at full volume (not again for 20 min)
+   * On primary: always play closure (low volume if windows closed played)
+   * On exit: always play exit
    */
   playChromecastMedia(alertType, onAllComplete) {
     if (!this.devices.length) {
@@ -623,66 +653,193 @@ class RedAlertPlugin {
       if (onAllComplete) onAllComplete();
       return;
     }
-    let mediaUrl;
-    switch (alertType) {
-      case ALERT_TYPES.PRIMARY:
-        mediaUrl = `${this.baseUrl}/alert-video`;
-        break;
-      case ALERT_TYPES.TEST:
-        mediaUrl = `${this.baseUrl}/test-video`;
-        break;
-      case ALERT_TYPES.EARLY_WARNING:
-        mediaUrl = `${this.baseUrl}/early-warning-video`;
-        break;
-      case ALERT_TYPES.FLASH_SHELTER:
-        mediaUrl = `${this.baseUrl}/flash-shelter-video`;
-        break;
-      case ALERT_TYPES.EXIT_NOTIFICATION:
-        mediaUrl = `${this.baseUrl}/exit-notification-video`;
-        break;
-      default:
-        this.log.error(`Unknown alert type: ${alertType}`);
-        if (onAllComplete) onAllComplete();
-        return;
+    // URLs for instructions files
+    const instructionFileMap = {
+      primary: this.shelterInstructions.primaryFile,
+      "early-warning": this.shelterInstructions.earlyWarningFile,
+      "flash-shelter": this.shelterInstructions.flashShelterFile,
+      "exit-notification": this.shelterInstructions.exitFile,
+    };
+    const instructionUrlMap = {};
+    for (const k in instructionFileMap) {
+      instructionUrlMap[k] = `${this.baseUrl}/shelter-instructions-${k}`;
     }
+
+    // Helper: which devices are shelter speakers?
+    const isShelterDevice = (dev) =>
+      (this.shelterInstructions.devices || []).some(
+        (s) =>
+          s.deviceName &&
+          dev.friendlyName &&
+          s.deviceName.trim().toLowerCase() ===
+            dev.friendlyName.trim().toLowerCase() &&
+          s.enabled !== false
+      );
+    // Helper: check cooldown for shelter instructions (per device/type)
+    const canPlayInstructions = (deviceName, alertType) => {
+      const minInterval =
+        (this.shelterInstructions.minIntervalMinutes || 20) * 60 * 1000;
+      const now = Date.now();
+      if (!this.shelterInstructionsLastPlayed[deviceName])
+        this.shelterInstructionsLastPlayed[deviceName] = {};
+      const last =
+        this.shelterInstructionsLastPlayed[deviceName][alertType] || 0;
+      return now - last > minInterval;
+    };
+    const markPlayed = (deviceName, alertType) => {
+      if (!this.shelterInstructionsLastPlayed[deviceName])
+        this.shelterInstructionsLastPlayed[deviceName] = {};
+      this.shelterInstructionsLastPlayed[deviceName][alertType] = Date.now();
+    };
 
     // For multi-device, only reset state when all devices finished
     const devicesToWait = new Set();
     this.devices.forEach((device) => {
-      const volume = this.getAlertVolume(alertType, device);
+      // Shelter logic
+      const shelterCfg = (this.shelterInstructions.devices || []).find(
+        (s) =>
+          s.deviceName &&
+          device.friendlyName &&
+          s.deviceName.trim().toLowerCase() ===
+            device.friendlyName.trim().toLowerCase()
+      );
+      if (shelterCfg && shelterCfg.enabled !== false) {
+        let playType = null;
+        let playUrl = null;
+        let playVolume = null;
+        if (
+          alertType === ALERT_TYPES.EARLY_WARNING ||
+          alertType === ALERT_TYPES.FLASH_SHELTER
+        ) {
+          if (canPlayInstructions(device.friendlyName, alertType)) {
+            playType = alertType;
+            playUrl = instructionUrlMap[alertType];
+            playVolume =
+              shelterCfg.volumes &&
+              typeof shelterCfg.volumes[alertType] === "number"
+                ? shelterCfg.volumes[alertType]
+                : 90;
+            markPlayed(device.friendlyName, alertType);
+          } else {
+            this.log.info(
+              `[Shelter] Skipping ${alertType} instructions on ${device.friendlyName} (cooldown not expired)`
+            );
+            return;
+          }
+        } else if (alertType === ALERT_TYPES.PRIMARY) {
+          playType = "primary";
+          playUrl = instructionUrlMap["primary"];
+          let lowVolume = 20;
+          if (
+            !canPlayInstructions(
+              device.friendlyName,
+              ALERT_TYPES.EARLY_WARNING
+            ) ||
+            !canPlayInstructions(device.friendlyName, ALERT_TYPES.FLASH_SHELTER)
+          ) {
+            playVolume = Math.min(
+              shelterCfg.volumes &&
+                typeof shelterCfg.volumes.primary === "number"
+                ? shelterCfg.volumes.primary
+                : 50,
+              lowVolume
+            );
+          } else {
+            playVolume =
+              shelterCfg.volumes &&
+              typeof shelterCfg.volumes.primary === "number"
+                ? shelterCfg.volumes.primary
+                : 50;
+          }
+          markPlayed(device.friendlyName, "primary");
+        } else if (alertType === ALERT_TYPES.EXIT_NOTIFICATION) {
+          playType = "exit-notification";
+          playUrl = instructionUrlMap["exit-notification"];
+          playVolume =
+            shelterCfg.volumes &&
+            typeof shelterCfg.volumes["exit-notification"] === "number"
+              ? shelterCfg.volumes["exit-notification"]
+              : 80;
+          markPlayed(device.friendlyName, "exit-notification");
+        }
+        if (playUrl && playType) {
+          devicesToWait.add(device.host);
+          device.play(playUrl, (err) => {
+            if (err) {
+              this.log.error(
+                `[Shelter] Failed to play instructions '${playType}' on ${device.friendlyName}: ${err.message}`
+              );
+              devicesToWait.delete(device.host);
+              checkAllFinished();
+            } else {
+              device.setVolume(playVolume / 100, (err) => {
+                if (err)
+                  this.log.warn(
+                    `[Shelter] Failed to set volume on ${device.friendlyName}: ${err.message}`
+                  );
+              });
+            }
+          });
+          device.on("finished", () => {
+            this.log.info(
+              `[Shelter] Finished instructions '${playType}' on ${device.friendlyName}`
+            );
+            devicesToWait.delete(device.host);
+            checkAllFinished();
+          });
+        }
+        return;
+      }
+      // Non-shelter device logic (unchanged)
       devicesToWait.add(device.host);
-      this.chromecastPlayingStatus[alertType].add(device.host);
-
-      device.play(mediaUrl, (err, player) => {
+      const volume = this.getAlertVolume(alertType, device);
+      let mediaUrl;
+      switch (alertType) {
+        case ALERT_TYPES.PRIMARY:
+          mediaUrl = `${this.baseUrl}/alert-video`;
+          break;
+        case ALERT_TYPES.TEST:
+          mediaUrl = `${this.baseUrl}/test-video`;
+          break;
+        case ALERT_TYPES.EARLY_WARNING:
+          mediaUrl = `${this.baseUrl}/early-warning-video`;
+          break;
+        case ALERT_TYPES.FLASH_SHELTER:
+          mediaUrl = `${this.baseUrl}/flash-shelter-video`;
+          break;
+        case ALERT_TYPES.EXIT_NOTIFICATION:
+          mediaUrl = `${this.baseUrl}/exit-notification-video`;
+          break;
+        default:
+          this.log.error(`Unknown alert type: ${alertType}`);
+          devicesToWait.delete(device.host);
+          checkAllFinished();
+          return;
+      }
+      device.play(mediaUrl, (err) => {
         if (err) {
           this.log.error(
             `Failed to play on ${device.friendlyName}: ${err.message}`
           );
           devicesToWait.delete(device.host);
-          this.chromecastPlayingStatus[alertType].delete(device.host);
           checkAllFinished();
-          return;
+        } else {
+          device.setVolume(volume / 100, (err) => {
+            if (err)
+              this.log.warn(
+                `Failed to set volume on ${device.friendlyName}: ${err.message}`
+              );
+          });
         }
-        device.setVolume(volume / 100, (err) => {
-          if (err)
-            this.log.warn(
-              `Failed to set volume on ${device.friendlyName}: ${err.message}`
-            );
-        });
       });
-
-      // Listen for 'finished' event on the device
       device.on("finished", () => {
         this.log.info(
           `Chromecast finished playback for ${alertType} on ${device.friendlyName}`
         );
         devicesToWait.delete(device.host);
-        this.chromecastPlayingStatus[alertType].delete(device.host);
         checkAllFinished();
       });
     });
-
-    // Helper: call onAllComplete() when all devices finished
     const checkAllFinished = () => {
       if (devicesToWait.size === 0 && typeof onAllComplete === "function") {
         this.log.info(
@@ -763,6 +920,47 @@ class RedAlertPlugin {
     );
     this.server.get("/exit-notification-video", (req, res) =>
       res.sendFile(path.join(mediaDir, this.exitNotificationVideoPath))
+    );
+    // Shelter instructions endpoints
+    this.server.get("/shelter-instructions-primary", (req, res) =>
+      res.sendFile(
+        path.join(
+          mediaDir,
+          this.shelterInstructions.primaryFile ||
+            this.ballisticClosureFile ||
+            "ballistic_closure.mp4"
+        )
+      )
+    );
+    this.server.get("/shelter-instructions-early-warning", (req, res) =>
+      res.sendFile(
+        path.join(
+          mediaDir,
+          this.shelterInstructions.earlyWarningFile ||
+            this.windowsClosedFile ||
+            "ballistic_windows_closed.mp4"
+        )
+      )
+    );
+    this.server.get("/shelter-instructions-flash-shelter", (req, res) =>
+      res.sendFile(
+        path.join(
+          mediaDir,
+          this.shelterInstructions.flashShelterFile ||
+            this.windowsClosedFile ||
+            "ballistic_windows_closed.mp4"
+        )
+      )
+    );
+    this.server.get("/shelter-instructions-exit-notification", (req, res) =>
+      res.sendFile(
+        path.join(
+          mediaDir,
+          this.shelterInstructions.exitFile ||
+            this.shelterExitFile ||
+            "exit.mp4"
+        )
+      )
     );
     this.server.get("/health", (req, res) => {
       this.log.debug("Media server health check");
