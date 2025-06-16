@@ -63,11 +63,11 @@ const DEFAULT_ALERTS_CONFIG = {
   },
 };
 const DEFAULT_MEDIA_PATHS = {
-  alertVideoPath: "videos/alert.mp4",
-  earlyWarningVideoPath: "videos/early.mp4",
-  flashAlertShelterVideoPath: "videos/flash-shelter.mp4",
-  exitNotificationVideoPath: "videos/exit.mp4",
-  testVideoPath: "videos/test.mp4",
+  alertVideoPath: "alert.mp4",
+  earlyWarningVideoPath: "early.mp4",
+  flashAlertShelterVideoPath: "flash-shelter.mp4",
+  exitNotificationVideoPath: "exit.mp4",
+  testVideoPath: "test.mp4",
 };
 
 class RedAlertPlugin {

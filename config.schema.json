@@ -5701,31 +5701,31 @@
             "alertVideoPath": {
                 "title": "Alert Video Path",
                 "type": "string",
-                "default": "videos/alert.mp4",
+                "default": "alert.mp4",
                 "description": "Path (relative to media directory) to the video file for primary alerts."
             },
             "earlyWarningVideoPath": {
                 "title": "Early Warning Video Path",
                 "type": "string",
-                "default": "videos/early.mp4",
+                "default": "early.mp4",
                 "description": "Path (relative to media directory) to the video file for early warnings."
             },
             "flashAlertShelterVideoPath": {
                 "title": "Flash Shelter Video Path",
                 "type": "string",
-                "default": "videos/flash-shelter.mp4",
+                "default": "flash-shelter.mp4",
                 "description": "Path (relative to media directory) to the video file for 'stay near shelter' warnings."
             },
             "exitNotificationVideoPath": {
                 "title": "Exit Notification Video Path",
                 "type": "string",
-                "default": "videos/exit.mp4",
+                "default": "exit.mp4",
                 "description": "Path (relative to media directory) to the video file for exit notifications."
             },
             "testVideoPath": {
                 "title": "Test Video Path",
                 "type": "string",
-                "default": "videos/test.mp4",
+                "default": "test.mp4",
                 "description": "Path (relative to media directory) to the video file for test alerts."
             }
         }
