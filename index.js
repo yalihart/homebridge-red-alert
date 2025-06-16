@@ -722,28 +722,13 @@ class RedAlertPlugin {
         } else if (alertType === ALERT_TYPES.PRIMARY) {
           playType = "primary";
           playUrl = instructionUrlMap["primary"];
-          let lowVolume = 20;
-          if (
-            !canPlayInstructions(
-              device.friendlyName,
-              ALERT_TYPES.EARLY_WARNING
-            ) ||
-            !canPlayInstructions(device.friendlyName, ALERT_TYPES.FLASH_SHELTER)
-          ) {
-            playVolume = Math.min(
-              shelterCfg.volumes &&
-                typeof shelterCfg.volumes.primary === "number"
-                ? shelterCfg.volumes.primary
-                : 50,
-              lowVolume
-            );
-          } else {
-            playVolume =
-              shelterCfg.volumes &&
-              typeof shelterCfg.volumes.primary === "number"
-                ? shelterCfg.volumes.primary
-                : 50;
-          }
+
+          // FIXED: Remove the volume cap logic that was causing volume to stay at 20
+          playVolume =
+            shelterCfg.volumes && typeof shelterCfg.volumes.primary === "number"
+              ? shelterCfg.volumes.primary
+              : 50;
+
           markPlayed(device.friendlyName, "primary");
         } else if (alertType === ALERT_TYPES.EXIT_NOTIFICATION) {
           playType = "exit-notification";
@@ -756,35 +741,18 @@ class RedAlertPlugin {
           markPlayed(device.friendlyName, "exit-notification");
         }
         if (playUrl && playType) {
-          devicesToWait.add(device.host);
-          device.play(playUrl, (err) => {
-            if (err) {
-              this.log.error(
-                `[Shelter] Failed to play instructions '${playType}' on ${device.friendlyName}: ${err.message}`
-              );
-              devicesToWait.delete(device.host);
-              checkAllFinished();
-            } else {
-              device.setVolume(playVolume / 100, (err) => {
-                if (err)
-                  this.log.warn(
-                    `[Shelter] Failed to set volume on ${device.friendlyName}: ${err.message}`
-                  );
-              });
-            }
-          });
-          device.on("finished", () => {
-            this.log.info(
-              `[Shelter] Finished instructions '${playType}' on ${device.friendlyName}`
-            );
-            devicesToWait.delete(device.host);
-            checkAllFinished();
-          });
+          this.playOnDevice(
+            device,
+            playUrl,
+            playVolume,
+            playType,
+            devicesToWait,
+            onAllComplete
+          );
         }
         return;
       }
       // Non-shelter device logic (unchanged)
-      devicesToWait.add(device.host);
       const volume = this.getAlertVolume(alertType, device);
       let mediaUrl;
       switch (alertType) {
@@ -805,42 +773,113 @@ class RedAlertPlugin {
           break;
         default:
           this.log.error(`Unknown alert type: ${alertType}`);
-          devicesToWait.delete(device.host);
-          checkAllFinished();
           return;
       }
+
+      this.playOnDevice(
+        device,
+        mediaUrl,
+        volume,
+        alertType,
+        devicesToWait,
+        onAllComplete
+      );
+    });
+  }
+
+  /**
+   * FIXED: Improved device playback with better error handling for Chromecast connections
+   */
+  playOnDevice(
+    device,
+    mediaUrl,
+    volume,
+    alertType,
+    devicesToWait,
+    onAllComplete
+  ) {
+    devicesToWait.add(device.host);
+
+    // Add connection validation before attempting to play
+    if (!device.client || device.client.readyState !== "open") {
+      this.log.warn(
+        `Device ${device.friendlyName} not properly connected, skipping playback`
+      );
+      devicesToWait.delete(device.host);
+      this.checkAllFinished(devicesToWait, onAllComplete, alertType);
+      return;
+    }
+
+    const playWithRetry = (retryCount = 0) => {
       device.play(mediaUrl, (err) => {
         if (err) {
           this.log.error(
-            `Failed to play on ${device.friendlyName}: ${err.message}`
+            `Failed to play ${alertType} on ${device.friendlyName}: ${err.message}`
           );
+
+          // Retry once for connection issues
+          if (retryCount === 0 && err.message.includes("ECONNRESET")) {
+            this.log.info(`Retrying playback on ${device.friendlyName}...`);
+            setTimeout(() => playWithRetry(1), 1000);
+            return;
+          }
+
           devicesToWait.delete(device.host);
-          checkAllFinished();
+          this.checkAllFinished(devicesToWait, onAllComplete, alertType);
         } else {
-          device.setVolume(volume / 100, (err) => {
-            if (err)
+          // Set volume with error handling
+          device.setVolume(volume / 100, (volErr) => {
+            if (volErr) {
               this.log.warn(
-                `Failed to set volume on ${device.friendlyName}: ${err.message}`
+                `Failed to set volume on ${device.friendlyName}: ${volErr.message}`
               );
+            } else {
+              this.log.info(
+                `Playing ${alertType} on ${device.friendlyName} at volume ${volume}%`
+              );
+            }
           });
         }
       });
-      device.on("finished", () => {
+
+      // Set up finished event listener (only once per device per playback)
+      const finishedHandler = () => {
         this.log.info(
-          `Chromecast finished playback for ${alertType} on ${device.friendlyName}`
+          `Finished playback for ${alertType} on ${device.friendlyName}`
         );
         devicesToWait.delete(device.host);
-        checkAllFinished();
-      });
-    });
-    const checkAllFinished = () => {
-      if (devicesToWait.size === 0 && typeof onAllComplete === "function") {
-        this.log.info(
-          `All Chromecast devices finished playback for ${alertType}`
-        );
-        onAllComplete();
-      }
+        device.removeListener("finished", finishedHandler);
+        this.checkAllFinished(devicesToWait, onAllComplete, alertType);
+      };
+
+      device.once("finished", finishedHandler);
+
+      // Add timeout as fallback
+      setTimeout(() => {
+        if (devicesToWait.has(device.host)) {
+          this.log.warn(
+            `Playback timeout for ${alertType} on ${device.friendlyName}`
+          );
+          devicesToWait.delete(device.host);
+          device.removeListener("finished", finishedHandler);
+          this.checkAllFinished(devicesToWait, onAllComplete, alertType);
+        }
+      }, this.chromecastTimeout * 1000);
     };
+
+    playWithRetry();
+  }
+
+  /**
+   * Helper function to check if all devices finished playing
+   */
+  checkAllFinished(devicesToWait, onAllComplete, alertType) {
+    if (devicesToWait.size === 0 && typeof onAllComplete === "function") {
+      this.log.info(
+        `All Chromecast devices finished playback for ${alertType}`
+      );
+      onAllComplete();
+    }
   }
 
   // --- Chromecast discovery and per-device/per-alert volume
