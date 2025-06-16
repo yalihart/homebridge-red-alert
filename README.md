@@ -1,270 +1,249 @@
-# Homebridge Red Alert Plugin
+# 🚨 Homebridge Red Alert Plugin 🚨
 
-This Homebridge plugin provides comprehensive integration with Israel's Red Alert system, allowing you to monitor both primary alerts and early warning notifications for specified cities and receive notifications via HomeKit and Chromecast devices.
+**Red Alert** is a Homebridge plugin for real-time civil defense alerts in Israel, supporting Chromecast devices and HomeKit integration. It provides real-time notifications for primary missile alerts, early warnings, flash (shelter) alerts, and exit (all-clear) notifications. All alert types are fully configurable with per-device and per-alert time and volume controls.
 
-## Features
+---
 
-### Primary Alert System
-- Real-time monitoring of Red Alert system via WebSocket for immediate threats
-- Primary alerts (rocket/missile threats) with highest priority
-- Automatic interruption of early warnings when primary alerts occur
+## ⚠️ Legal Disclaimer / הצהרת אחריות משפטית / إخلاء مسؤولية قانونية
 
-### Early Warning System
-- Polling-based monitoring of OREF early warning alerts (category 13)
-- Advanced early warning notifications for "alerts expected in your area soon"
-- Time-based restrictions (configurable hours, default 10 AM - 8 PM)
-- Reduced volume playback (configurable reduction, default 20% less than primary alerts)
-- Smart duplicate prevention with 60-second alert window
-- Automatic cleanup of processed alerts to prevent memory leaks
+### English
+> This software is an independent, community project and is not produced, endorsed, maintained, or approved by any governmental entity, including but not limited to the Israeli Ministry of Defense or the Home Front Command. No relationship, partnership, or affiliation exists between the developers of this project and any government or defense body.  
+>  
+> The plugin is provided "as is," without any warranties, express or implied. Usage is strictly at your own risk. The developers disclaim all responsibility for any direct, indirect, incidental, or consequential damages that may arise from the use or inability to use this software.  
+>  
+> This software is not intended to replace or serve as a substitute for any official warning or alert system. Users are strongly advised to rely on official, government-issued alert systems for safety and emergency information.
 
-### HomeKit Integration
-- Contact sensor for primary alerts that activates during threats
-- Separate contact sensor for early warning alerts
-- Test button to simulate primary alerts
-- Real-time status updates in HomeKit
+---
 
-### Chromecast Integration
-- Automatic discovery and playback on all compatible Chromecast devices
-- Support for both audio and video playback based on device capabilities
-- Per-device volume configuration support
-- Retry logic for failed playback attempts
-- Priority-based media selection (primary vs early warning vs test)
+### עברית
+> תוכנה זו מהווה יוזמה קהילתית בלתי תלויה, ואינה מופקת, מאושרת, נתמכת או מוסדרת על ידי אף גורם ממשלתי, לרבות אך לא רק משרד הביטחון או פיקוד העורף. אין כל קשר, שותפות או זיקה בין מפתחי פרויקט זה לבין אף גוף ממשלתי או ביטחוני.  
+>  
+> התוסף מסופק כפי שהוא ("As-Is") ללא כל אחריות מכל סוג, מפורשת או משתמעת. השימוש בתוסף הוא על אחריות המשתמש בלבד. המפתחים מסירים כל אחריות לנזקים ישירים, עקיפים, נלווים או תוצאתיים העלולים להיגרם כתוצאה מהשימוש או מאי היכולת להשתמש בתוכנה זו.  
+>  
+> תוכנה זו אינה מיועדת להוות תחליף או כלי רשמי למערכות התרעה רשמיות. מומלץ למשתמשים להסתמך על מערכות התרעה רשמיות של המדינה לצרכי בטיחות וחירום בלבד.
 
-### Technical Features
-- Configurable city selection for targeted monitoring
-- Automatic reconnection to WebSocket if connection is lost
-- Local media server for hosting alert sounds and videos
-- Robust error handling and graceful fallbacks
-- Comprehensive logging for monitoring and debugging
+---
 
-## Installation
+### العربية
+> هذا البرنامج هو مشروع مجتمعي مستقل وغير منتج أو معتمد أو مدعوم أو مصرح به من قبل أي جهة حكومية، بما في ذلك (وليس حصراً) وزارة الأمن أو الجبهة الداخلية في إسرائيل. لا توجد أي علاقة أو شراكة أو ارتباط بين مطوري هذا المشروع وأي جهة حكومية أو عسكرية.  
+>  
+> يتم توفير هذا البرنامج كما هو ("As-Is") دون أي ضمانات صريحة أو ضمنية. استخدامك للبرنامج على مسؤوليتك الخاصة فقط. يخلي المطورون مسؤوليتهم عن أي أضرار مباشرة أو غير مباشرة أو عرضية أو تبعية قد تنشأ عن استخدام أو عدم القدرة على استخدام هذا البرنامج.  
+>  
+> هذا البرنامج ليس بديلاً عن الأنظمة الرسمية للإنذار أو التحذير. يُنصح المستخدمون بالاعتماد على أنظمة الإنذار الرسمية فقط لأغراض السلامة والطوارئ.
 
-Install this plugin using npm:
+---
+
+## ✨ Features
+
+- **Real-time monitoring** of Israeli civil defense alerts (OREF API & WebSocket)
+- **HomeKit sensors** for:
+  - Primary alert ("Red Alert")
+  - Early-warning ("בדקות הקרובות צפויות להתקבל התרעות באזורך")
+  - Flash/shelter warning ("שהייה בסמיכות למרחב מוגן")
+  - Exit notification ("ניתן לצאת מהמרחב המוגן")
+  - Test switch for triggering alerts manually
+- **Chromecast support** – play alert sounds/videos on one or more Chromecast devices
+- **Per-alert-type controls**:
+  - Enable/disable
+  - Start/end time window
+  - Default volume
+- **Per-device overrides**:
+  - Set default and alert-type-specific volume per Chromecast device
+- **Automatic deduplication** – no duplicate notifications for the same event
+- **Customizable media** – provide your own videos/sounds or use included defaults
+- **City filtering** – only get notified for cities you care about
+
+---
+
+## 🛠️ Installation
+
+**1. Clone this repository into your Homebridge `node_modules` directory (recommended for advanced users):**
 
 ```bash
-npm install -g homebridge-red-alert
+cd /path/to/homebridge/node_modules/
+git clone https://github.com/yalihart/homebridge-red-alert.git
+cd homebridge-red-alert
+npm install
 ```
-## Configuration
 
-Add the following to your Homebridge `config.json` file:
+**2. Restart Homebridge.**
+
+**3. Place your alert media files**
+
+By default, the plugin looks for the following files in  
+`<homebridge-root>/red-alert-media/videos/`:
+- `alert.mp4` (primary alert)
+- `early.mp4` (early warning)
+- `flash-shelter.mp4` (flash/shelter warning)
+- `exit.mp4` (exit notification)
+- `test.mp4` (test alert)
+
+> The plugin will auto-copy default media files if none exist.
+
+---
+
+## ⚙️ Configuration
+
+Edit your Homebridge `config.json` and add an accessory of type `RedAlert`.  
+Below is a **sample configuration** that demonstrates all features:
 
 ```json
 {
-    "accessories": [
-        {
-            "accessory": "RedAlert",
-            "name": "Red Alert",
-            "cities": [
-                "רעננה",
-                "תל אביב"
-            ],
-            "useChromecast": true,
-            "chromecastVolume": 100,
-            "chromecastVolumes": [
-                {
-                    "deviceName": "Living Room TV",
-                    "volume": 40
-                },
-                {
-                    "deviceName": "Bedroom TV", 
-                    "volume": 30
-                }
-            ],
-            "chromecastTimeout": 30,
-            "enableEarlyWarning": true,
-            "earlyWarningStartHour": 10,
-            "earlyWarningEndHour": 20,
-            "earlyWarningVolumeReduction": 20,
-            "earlyWarningPollInterval": 8000,
-            "wsUrl": "ws://ws.cumta.morhaviv.com:25565/ws",
-            "reconnectInterval": 5000,
-            "serverPort": 8095
-        }
-    ]
+  "accessory": "RedAlert",
+  "name": "Red Alert",
+  "cities": ["רעננה"],
+  "useChromecast": true,
+  "chromecastVolume": 90,
+  "chromecastTimeout": 30,
+  "serverPort": 8095,
+  "wsUrl": "ws://ws.cumta.morhaviv.com:25565/ws",
+  "reconnectInterval": 5000,
+  "orefHistoryUrl": "https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json",
+  "alerts": {
+    "early-warning": {
+      "enabled": true,
+      "startHour": 9,
+      "endHour": 21,
+      "volume": 80
+    },
+    "flash-shelter": {
+      "enabled": true,
+      "volume": 80
+    },
+    "exit-notification": {
+      "enabled": true,
+      "volume": 40
+    }
+  },
+  "chromecastVolumes": [
+    {
+      "deviceName": "Yali's TV",
+      "volume": 40,
+      "alerts": {
+        "early-warning": { "volume": 25 },
+        "flash-shelter": { "volume": 20 },
+        "exit-notification": { "volume": 15 }
+      }
+    }
+  ],
+  "alertVideoPath": "videos/alert.mp4",
+  "earlyWarningVideoPath": "videos/early.mp4",
+  "flashAlertShelterVideoPath": "videos/flash-shelter.mp4",
+  "exitNotificationVideoPath": "videos/exit.mp4",
+  "testVideoPath": "videos/test.mp4"
 }
 ```
 
-## Configuration Options
+> **⏰ Alert time filtering is strictly based on the system clock of your Homebridge device.  
+> If your device's time is incorrect, alerts may be suppressed or mis-timed.  
+> Please ensure your device's date and time are accurate and synchronized to a trusted time source.**
 
-### Basic Settings
-| Option              | Description                                             | Default                               |
-|---------------------|---------------------------------------------------------|---------------------------------------|
-| `name`              | Name of the accessory in HomeKit                        | "Red Alert"                           |
-| `cities`            | Array of cities to monitor for alerts (Hebrew names)    | []                                    |
-| `useChromecast`     | Enable sending alerts to Chromecast devices             | true                                  |
-| `serverPort`        | Port to use for the media server                        | 8095                                  |
+### Key Configuration Properties
 
-### Primary Alert Settings
-| Option              | Description                                             | Default                               |
-|---------------------|---------------------------------------------------------|---------------------------------------|
-| `wsUrl`             | WebSocket URL for Red Alert API                         | "ws://ws.cumta.morhaviv.com:25565/ws" |
-| `reconnectInterval` | How often to attempt reconnection to WebSocket (ms)     | 5000                                  |
-| `chromecastTimeout` | How long to play alerts on Chromecast devices (seconds) | 30                                    |
+| Property                      | Description                                                                                                               |
+|-------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| `name`                        | Accessory name as seen in HomeKit                                                                                         |
+| `cities`                      | Array of cities to monitor (in Hebrew, as received from OREF). If omitted, all cities are monitored.                      |
+| `useChromecast`               | Enable/disable Chromecast playback                                                                                        |
+| `chromecastVolume`            | Default volume for Chromecast devices (0-100).                                                                            |
+| `chromecastTimeout`           | How many seconds to play alert on Chromecast (fallback for HomeKit only; Chromecast playback always runs until media ends)|
+| `chromecastVolumes`           | Array of per-device overrides. Can specify `volume` for device and per-alert-type.                                        |
+| `alerts`                      | Per-alert-type configuration (see below)                                                                                  |
+| `alertVideoPath`, ...         | Path to video files for each alert type, relative to `red-alert-media` (defaults provided, only override if you want)     |
+| `wsUrl`, `orefHistoryUrl`     | URLs for real-time and polling APIs (advanced, should not need to change)                                                 |
+| `earlyWarningPollInterval`    | How often (ms) to poll for early warnings, flash, and exit notifications                                                  |
+| `serverPort`                  | Port for serving local media (Chromecast)                                                                                 |
 
-### Early Warning Settings
-| Option                        | Description                                           | Default                               |
-|-------------------------------|-------------------------------------------------------|---------------------------------------|
-| `enableEarlyWarning`          | Enable early warning monitoring                       | true                                  |
-| `earlyWarningStartHour`       | Start hour for early warning notifications (0-23)    | 10 (10 AM)                           |
-| `earlyWarningEndHour`         | End hour for early warning notifications (0-23)      | 20 (8 PM)                            |
-| `earlyWarningVolumeReduction` | Volume reduction percentage for early warnings        | 20                                    |
-| `earlyWarningPollInterval`    | How often to check for early warnings (ms)           | 8000 (8 seconds)                     |
-| `orefHistoryUrl`              | OREF API endpoint for early warning alerts           | Auto-configured                       |
+#### Per-Alert-Type Configuration (`alerts`)
 
-### Chromecast Settings
-| Option               | Description                                            | Default     |
-|----------------------|--------------------------------------------------------|-------------|
-| `chromecastVolume`   | Default volume for all Chromecast devices (0-100)     | 30          |
-| `chromecastVolumes`  | Per-device volume configuration array                  | []          |
+Each alert type (`early-warning`, `flash-shelter`, `exit-notification`) supports:
 
-### Media File Settings
-| Option                     | Description                                | Default                    |
-|----------------------------|--------------------------------------------|----------------------------|
-| `alertSoundPath`           | Path to the sound file for primary alerts | "sounds/alert.mp3"         |
-| `testSoundPath`            | Path to the sound file for test alerts    | "sounds/test.mp3"          |
-| `alertVideoPath`           | Path to the video file for primary alerts | "videos/alert.mp4"         |
-| `testVideoPath`            | Path to the video file for test alerts    | "videos/test.mp4"          |
-| `earlyWarningSoundPath`    | Path to the sound file for early warnings | "sounds/early.mp3"         |
-| `earlyWarningVideoPath`    | Path to the video file for early warnings | "videos/early.mp4"         |
+- `enabled`   – Enable/disable this alert type
+- `startHour` – Hour to start notifications (0-23), inclusive
+- `endHour`   – Hour to end notifications (0-23), exclusive;  
+  - If both are `0`, alert is 24/7
+  - If omitted, alert is always active
+- `volume`    – Default volume for this type (can be overridden per device)
 
-## Alert Types and Priorities
+#### Per-Device Overrides (`chromecastVolumes`)
 
-### Primary Alerts (Highest Priority)
-- **Source**: Real-time WebSocket connection
-- **Types**: Rocket/missile threats, air raid sirens
-- **Behavior**: 
-  - Plays at full configured volume
-  - Interrupts any playing early warnings
-  - Activates primary alert contact sensor
-  - Cannot be interrupted by early warnings
+You can set:
+- A default `volume` for each Chromecast device
+- Per-alert-type volume overrides (in the `alerts` object for that device)
 
-### Early Warning Alerts (Lower Priority)
-- **Source**: OREF API polling every 8 seconds
-- **Types**: "Alerts expected in your area soon" notifications
-- **Behavior**:
-  - Plays at reduced volume (20% less than primary alerts)
-  - Only plays during configured hours (10 AM - 8 PM by default)
-  - Skipped if primary alert is active
-  - 60-second alert window prevents replaying same alerts
-  - Activates early warning contact sensor
+---
 
-### Test Alerts
-- **Source**: Manual trigger via HomeKit switch
-- **Behavior**: Simulates primary alert for testing purposes
+## 🏠 HomeKit Integration
 
-## Custom Media Files
+- **Red Alert Sensor** – triggers for primary missile alerts
+- **Early Warning Sensor** – triggers for early-warning messages
+- **Flash Alert Sensor** – triggers for "stay near shelter" messages
+- **Exit Notification Sensor** – triggers for "ניתן לצאת מהמרחב המוגן"
+- **Test Switch** – triggers a test alert and media playback
 
-To use custom media files, place them in the Homebridge storage directory under `red-alert-media/`.
+---
 
-Example directory structure:
-```
-/path/to/homebridge/storage/red-alert-media/
-├── sounds/
-│   ├── alert.mp3      # Primary alert sound
-│   ├── test.mp3       # Test alert sound
-│   └── early.mp3      # Early warning sound
-└── videos/
-    ├── alert.mp4      # Primary alert video
-    ├── test.mp4       # Test alert video
-    └── early.mp4      # Early warning video
-```
+## 📺 Chromecast Integration
 
-## City Names
+- Discovers Chromecast devices on your network automatically
+- Plays relevant video for each alert type, on all devices
+- Per-device and per-alert-type volume controls
+- **Playback on Chromecast ends only when the video finishes playing.** Alert sensors reset only after playback ends on all devices.
+- Retries playback if initial attempt fails
 
-Use Hebrew city names as they appear in the official Israeli alert system. Common examples:
-- `"רעננה"` (Ra'anana)
-- `"תל אביב"` (Tel Aviv)
-- `"ירושלים"` (Jerusalem)
-- `"חיפה"` (Haifa)
-- `"באר שבע"` (Be'er Sheva)
+---
 
-## Usage
+## 🎥 Media Files
 
-Once installed and configured, the plugin will:
+By default, the plugin expects these files under `<homebridge-root>/red-alert-media/videos/`:
 
-1. **Primary Alert Monitoring**: Continuously monitor WebSocket for immediate threats
-2. **Early Warning Monitoring**: Poll OREF API every 8 seconds for advance notifications
-3. **HomeKit Integration**: 
-   - Create primary alert contact sensor
-   - Create early warning contact sensor  
-   - Create test switch for manual testing
-4. **Alert Response**:
-   - Activate appropriate contact sensor
-   - Play media on all discovered Chromecast devices
-   - Respect priority system (primary alerts interrupt early warnings)
-   - Apply volume settings based on alert type
+- `alert.mp4` – Main alert (primary)
+- `early.mp4` – Early warning
+- `flash-shelter.mp4` – Flash/shelter warning
+- `exit.mp4` – Exit notification ("ניתן לצאת מהמרחב המוגן")
+- `test.mp4` – Test
 
-## Volume Configuration Examples
+If you don't specify your own, the plugin will auto-copy its default media on first run.
 
-### Simple Configuration
-```json
-{
-    "chromecastVolume": 50
-}
-```
-All devices play at 50% volume for primary alerts, 30% for early warnings.
+---
 
-### Per-Device Configuration
-```json
-{
-    "chromecastVolume": 100,
-    "chromecastVolumes": [
-        {
-            "deviceName": "Living Room TV",
-            "volume": 60
-        },
-        {
-            "deviceName": "Bedroom TV",
-            "volume": 30
-        }
-    ],
-    "earlyWarningVolumeReduction": 25
-}
-```
-- Living Room TV: 60% primary, 35% early warning
-- Bedroom TV: 30% primary, 5% early warning
-- Other devices: 100% primary, 75% early warning
+## 🛠️ Advanced / Troubleshooting
 
-## Troubleshooting
+- The plugin logs all actions and errors. Check the Homebridge log for details.
+- If your Chromecast devices are not found, make sure they are on the same network and discoverable.
+- For OREF city names, use the exact Hebrew as used by the OREF system.
 
-### Primary Alerts
-- **No primary alerts received**: Verify WebSocket connection and city names
-- **Connection issues**: Check network connectivity and firewall settings
+---
 
-### Early Warnings
-- **No early warnings**: Verify OREF API access and city names in Hebrew
-- **Duplicate alerts**: Plugin automatically prevents replaying same alerts within 60 seconds
-- **Time restrictions**: Early warnings only play during configured hours (10 AM - 8 PM default)
+## 🧑‍💻 Upgrading / Customization
 
-### Chromecast Issues
-- **Devices not detected**: Ensure Chromecast devices are on same network as Homebridge
-- **Media not playing**: Check media files exist and media server is accessible
-- **Volume issues**: Verify per-device volume configuration syntax
+- You can replace the video files with your own (same filename, or override the path in config).
+- To add more cities, just add them to the `cities` array.
+- To monitor all cities, remove the `cities` property.
 
-### General Issues
-- **Plugin not loading**: Check Homebridge logs for configuration errors
-- **Memory usage**: Plugin automatically cleans up old processed alerts
+---
 
-## API Endpoints
+## 🤝 Contributing & Contact
 
-The plugin creates a local media server with the following endpoints:
+Please feel free to **create pull requests, request features, report issues, or contact me for any reason**.  
+I am happy to help and welcome contributions from anyone!
 
-- `GET /alert-video` - Primary alert video
-- `GET /test-video` - Test alert video  
-- `GET /early-warning-video` - Early warning video
-- `GET /alert-sound` - Primary alert audio
-- `GET /test-sound` - Test alert audio
-- `GET /early-warning-sound` - Early warning audio
-- `GET /health` - Health check endpoint
+### 🇮🇱 עם ישראל חי 🇮🇱
 
-## Contributing
+---
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+## 🙏 Credits
 
-## License
+- [OREF API](https://www.oref.org.il/)
+- [chromecast-api](https://github.com/alxhotel/chromecast-api)
+- Cumta Realtime Alert System (WS)
+- Homebridge community and HomeKit
+
+---
+
+## 📝 License
 
 MIT
 
-## Disclaimer
+---
 
-This plugin is designed to complement, not replace, official alert systems. Always follow official guidance from Israeli emergency services and authorities.

@@ -1,40 +1,82 @@
 {
-    "chromecastVolume": 90,
-    "useChromecast": true,
-    "earlyWarningMaxAge": 30,
-    "name": "Red Alert",
-    "wsUrl": "ws://ws.cumta.morhaviv.com:25565/ws",
-    "chromecastTimeout": 30,
-    "earlyWarningPollInterval": 8000,
-    "enableEarlyWarning": true,
-    "enableFlashAlerts": true,
-    "flashAlertVolumeReduction": 10,
     "accessory": "RedAlert",
-    "earlyWarningVolumeReduction": 20,
-    "chromecastVolumes": [
-        {
-            "volume": 40,
-            "deviceName": "Yali's TV"
-        },
-        {
-            "volume": 40,
-            "deviceName": "Bedroom TV"
-        },
-        {
-            "volume": 40,
-            "deviceName": "tal bedroom tv"
-        }
-    ],
-    "orefHistoryUrl": "https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json",
-    "earlyWarningEndHour": 21,
-    "reconnectInterval": 5000,
-    "earlyWarningVideoPath": "videos/early.mp4",
-    "serverPort": 8095,
-    "earlyWarningStartHour": 9,
+    "name": "Red Alert",
     "cities": [
         "רעננה"
     ],
+    "useChromecast": true,
+    "chromecastVolume": 90,
+    "chromecastTimeout": 30,
+    "serverPort": 8095,
+    "wsUrl": "ws://ws.cumta.morhaviv.com:25565/ws",
+    "reconnectInterval": 5000,
+    "orefHistoryUrl": "https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json",
+    "alerts": {
+        "early-warning": {
+            "enabled": true,
+            "startHour": 9,
+            "endHour": 21,
+            "volume": 75
+        },
+        "flash-shelter": {
+            "enabled": true,
+            "volume": 75
+        },
+        "exit-notification": {
+            "enabled": true,
+            "volume": 40
+        }
+    },
+    "chromecastVolumes": [
+        {
+            "deviceName": "Yali's TV",
+            "volume": 40,
+            "alerts": {
+                "early-warning": {
+                    "volume": 25
+                },
+                "flash-shelter": {
+                    "volume": 20
+                },
+                "exit-notification": {
+                    "volume": 15
+                }
+            }
+        },
+        {
+            "deviceName": "Bedroom TV",
+            "volume": 40,
+            "alerts": {
+                "early-warning": {
+                    "volume": 25
+                },
+                "flash-shelter": {
+                    "volume": 20
+                },
+                "exit-notification": {
+                    "volume": 15
+                }
+            }
+        },
+        {
+            "deviceName": "tal bedroom tv",
+            "volume": 40,
+            "alerts": {
+                "early-warning": {
+                    "volume": 25
+                },
+                "flash-shelter": {
+                    "volume": 20
+                },
+                "exit-notification": {
+                    "volume": 15
+                }
+            }
+        }
+    ],
     "alertVideoPath": "videos/alert.mp4",
-    "testVideoPath": "videos/test.mp4",
-    "flashAlertShelterVideoPath": "videos/flash-shelter.mp4"
+    "earlyWarningVideoPath": "videos/early.mp4",
+    "flashAlertShelterVideoPath": "videos/flash-shelter.mp4",
+    "exitNotificationVideoPath": "videos/exit.mp4",
+    "testVideoPath": "videos/test.mp4"
 }
