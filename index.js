@@ -74,13 +74,6 @@ const DEFAULT_MEDIA_PATHS = {
   shelterExitFile: "exit.mp4",
 };
 
-this.ballisticClosureFile =
-  config.ballisticClosureFile || DEFAULT_MEDIA_PATHS.ballisticClosureFile;
-this.windowsClosedFile =
-  config.windowsClosedFile || DEFAULT_MEDIA_PATHS.windowsClosedFile;
-this.shelterExitFile =
-  config.shelterExitFile || DEFAULT_MEDIA_PATHS.shelterExitFile;
-
 class RedAlertPlugin {
   constructor(log, config, api) {
     this.log = log;
