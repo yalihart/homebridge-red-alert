@@ -122,7 +122,7 @@ class RedAlertPlugin {
       : [];
     this.deviceOverrides = this.parseDeviceOverrides(this.chromecastVolumes);
 
-    // --- Shelter instructions (NEW LOGIC, add this) ---
+    // --- Shelter instructions ---
     const DEFAULT_SHELTER = {
       devices: [],
       primaryFile: "ballistic_closure.mp4",
@@ -157,13 +157,6 @@ class RedAlertPlugin {
     this.processedFlashAlerts = new Set();
     this.processedExitNotifications = new Set();
 
-    // Track which devices are currently playing for each alert type
-    this.chromecastPlayingStatus = {
-      [ALERT_TYPES.EARLY_WARNING]: new Set(),
-      [ALERT_TYPES.FLASH_SHELTER]: new Set(),
-      [ALERT_TYPES.EXIT_NOTIFICATION]: new Set(),
-    };
-
     // --- HomeKit services
     this.service = new Service.ContactSensor(this.name);
     this.testSwitchService = new Service.Switch(`${this.name} Test`, "test");
@@ -186,13 +179,14 @@ class RedAlertPlugin {
     // --- Startup logic
     if (this.api) {
       this.api.on("didFinishLaunching", () => {
-        this.log.info("Initializing Red Alert plugin...");
+        this.log.info("🚀 Initializing Red Alert plugin...");
         this.setupMediaServer();
         this.copyDefaultMediaFiles();
         if (this.useChromecast) this.setupChromecastDiscovery();
         this.setupWebSocket();
         this.setupEarlyWarningMonitoring();
         this.setupCleanupTimer();
+        this.log.info("✅ Red Alert plugin initialization complete");
       });
     }
   }
@@ -214,6 +208,9 @@ class RedAlertPlugin {
         alerts[type]
       );
     }
+    this.log.debug(
+      `⚙️ Parsed alert configs: ${JSON.stringify(result, null, 2)}`
+    );
     return result;
   }
 
@@ -241,6 +238,9 @@ class RedAlertPlugin {
         }
       }
     });
+    this.log.debug(
+      `⚙️ Parsed device overrides: ${JSON.stringify(result, null, 2)}`
+    );
     return result;
   }
 
@@ -275,6 +275,7 @@ class RedAlertPlugin {
       this.exitNotificationService,
     ];
   }
+
   getAlertState(callback) {
     callback(
       null,
@@ -283,6 +284,7 @@ class RedAlertPlugin {
         : Characteristic.ContactSensorState.CONTACT_DETECTED
     );
   }
+
   getEarlyWarningState(callback) {
     callback(
       null,
@@ -291,6 +293,7 @@ class RedAlertPlugin {
         : Characteristic.ContactSensorState.CONTACT_DETECTED
     );
   }
+
   getFlashAlertState(callback) {
     callback(
       null,
@@ -299,6 +302,7 @@ class RedAlertPlugin {
         : Characteristic.ContactSensorState.CONTACT_DETECTED
     );
   }
+
   getExitNotificationState(callback) {
     callback(
       null,
@@ -307,9 +311,10 @@ class RedAlertPlugin {
         : Characteristic.ContactSensorState.CONTACT_DETECTED
     );
   }
+
   handleTestSwitch(on, callback) {
     if (on) {
-      this.log.info("Running alert test");
+      this.log.info("🧪 Running alert test");
       this.triggerTest();
       setTimeout(() => {
         this.testSwitchService.updateCharacteristic(Characteristic.On, false);
@@ -317,35 +322,47 @@ class RedAlertPlugin {
     }
     callback(null);
   }
+
   triggerTest() {
+    this.log.info(`🧪 TEST ALERT TRIGGERED`);
     this.isAlertActive = true;
     this.alertActiveCities =
       this.selectedCities.length > 0 ? [this.selectedCities[0]] : ["Test"];
     this.log.info(
-      `Test alert triggered for: ${this.alertActiveCities.join(", ")}`
+      `📍 Test alert triggered for: ${this.alertActiveCities.join(", ")}`
     );
     this.service.updateCharacteristic(
       Characteristic.ContactSensorState,
       Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
     );
     if (this.useChromecast) {
-      this.playChromecastMedia(ALERT_TYPES.TEST);
+      this.playChromecastMedia(ALERT_TYPES.TEST, () => {
+        this.log.info("✅ Test alert playback completed, resetting state");
+        this.isAlertActive = false;
+        this.alertActiveCities = [];
+        this.service.updateCharacteristic(
+          Characteristic.ContactSensorState,
+          Characteristic.ContactSensorState.CONTACT_DETECTED
+        );
+      });
+    } else {
+      setTimeout(() => {
+        this.isAlertActive = false;
+        this.alertActiveCities = [];
+        this.log.info("✅ Test alert reset");
+        this.service.updateCharacteristic(
+          Characteristic.ContactSensorState,
+          Characteristic.ContactSensorState.CONTACT_DETECTED
+        );
+      }, 10000);
     }
-    setTimeout(() => {
-      this.isAlertActive = false;
-      this.alertActiveCities = [];
-      this.log.info("Test alert reset");
-      this.service.updateCharacteristic(
-        Characteristic.ContactSensorState,
-        Characteristic.ContactSensorState.CONTACT_DETECTED
-      );
-    }, 10000);
   }
 
   /**
    * Deduplication cleanup - remove old processed alert IDs hourly.
    */
   setupCleanupTimer() {
+    this.log.info("🧹 Setting up cleanup timer (hourly)");
     setInterval(() => {
       const cutoff = Date.now() - 2 * 60 * 60 * 1000;
       for (const [set, name] of [
@@ -362,7 +379,7 @@ class RedAlertPlugin {
           }
         }
         if (removed)
-          this.log.debug(`Cleaned up ${removed} processed ${name} entries`);
+          this.log.debug(`🧹 Cleaned up ${removed} processed ${name} entries`);
       }
     }, 3600000);
   }
@@ -371,13 +388,18 @@ class RedAlertPlugin {
    * Poll OREF API for early warning / flash / exit notification every N seconds.
    */
   setupEarlyWarningMonitoring() {
+    this.log.info(
+      `📡 Setting up OREF monitoring (${this.earlyWarningPollInterval}ms interval)`
+    );
     this.pollEarlyWarning();
     this.earlyWarningTimer = setInterval(
       () => this.pollEarlyWarning(),
       this.earlyWarningPollInterval
     );
   }
+
   pollEarlyWarning() {
+    this.log.debug("📡 Polling OREF API for alerts...");
     const options = {
       headers: {
         accept: "application/json, text/plain, */*",
@@ -389,25 +411,26 @@ class RedAlertPlugin {
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
         if (res.statusCode !== 200) {
-          this.log.warn(`OREF API returned status: ${res.statusCode}`);
+          this.log.warn(`⚠️ OREF API returned status: ${res.statusCode}`);
           return;
         }
         try {
           const parsedData = JSON.parse(data);
+          this.log.debug(`📡 OREF API returned ${parsedData.length} alerts`);
           this.processEarlyWarningData(parsedData);
           this.processFlashAlertData(parsedData);
           this.processExitNotificationData(parsedData);
         } catch (err) {
-          this.log.error(`Error parsing alert data: ${err.message}`);
+          this.log.error(`❌ Error parsing alert data: ${err.message}`);
         }
       });
     });
     req.on("error", (error) =>
-      this.log.error(`Alert polling request error: ${error.message}`)
+      this.log.error(`❌ Alert polling request error: ${error.message}`)
     );
     req.setTimeout(10000, () => {
       req.destroy();
-      this.log.warn("Alert polling request timeout");
+      this.log.warn("⚠️ Alert polling request timeout");
     });
   }
 
@@ -415,7 +438,10 @@ class RedAlertPlugin {
    * Early Warning: category 13, specific title, recent, city match, deduped.
    */
   processEarlyWarningData(alerts) {
-    if (!this.isAlertTypeActive(ALERT_TYPES.EARLY_WARNING)) return;
+    if (!this.isAlertTypeActive(ALERT_TYPES.EARLY_WARNING)) {
+      this.log.debug("⏸️ Early warning alerts disabled or outside time window");
+      return;
+    }
     if (!Array.isArray(alerts)) return;
     const now = Date.now();
     const cutoffTime = now - 60000;
@@ -439,10 +465,20 @@ class RedAlertPlugin {
         this.selectedCities.length === 0 ||
         this.selectedCities.includes(alert.data)
     );
-    if (!relevantAlerts.length) return;
-    if (this.isAlertActive || this.isFlashAlertActive) return;
+    if (!relevantAlerts.length) {
+      this.log.debug(
+        `🟡 Found ${alertsToProcess.length} early warning alerts, but none for monitored cities`
+      );
+      return;
+    }
+    if (this.isAlertActive || this.isFlashAlertActive) {
+      this.log.info(
+        `🟡 Early warning alerts found but skipped (primary/flash alert active)`
+      );
+      return;
+    }
     const cities = relevantAlerts.map((alert) => alert.data);
-    this.log.info(`EARLY WARNING TRIGGERED for areas: ${cities.join(", ")}`);
+    this.log.info(`🟡 EARLY WARNING TRIGGERED for areas: ${cities.join(", ")}`);
     this.triggerEarlyWarning(cities);
   }
 
@@ -450,7 +486,10 @@ class RedAlertPlugin {
    * Flash/Shelter: category 14, shelter/early-warning title, recent, city, deduped.
    */
   processFlashAlertData(alerts) {
-    if (!this.isAlertTypeActive(ALERT_TYPES.FLASH_SHELTER)) return;
+    if (!this.isAlertTypeActive(ALERT_TYPES.FLASH_SHELTER)) {
+      this.log.debug("⏸️ Flash alerts disabled or outside time window");
+      return;
+    }
     if (!Array.isArray(alerts)) return;
     const now = Date.now();
     const cutoffTime = now - 60000;
@@ -479,11 +518,22 @@ class RedAlertPlugin {
         this.selectedCities.length === 0 ||
         this.selectedCities.includes(alert.data)
     );
-    if (!relevant.length) return;
-    if (this.isAlertActive) return;
-    if (this.isEarlyWarningActive) this.stopEarlyWarningPlayback();
+    if (!relevant.length) {
+      this.log.debug(
+        `🔴 Found ${alertsToProcess.length} flash alerts, but none for monitored cities`
+      );
+      return;
+    }
+    if (this.isAlertActive) {
+      this.log.info(`🔴 Flash alerts found but skipped (primary alert active)`);
+      return;
+    }
+    if (this.isEarlyWarningActive) {
+      this.log.info("🔴 Flash alert interrupting early warning");
+      this.stopEarlyWarningPlayback();
+    }
     const cities = relevant.map((alert) => alert.data);
-    this.log.info(`FLASH ALERT TRIGGERED for areas: ${cities.join(", ")}`);
+    this.log.info(`🔴 FLASH ALERT TRIGGERED for areas: ${cities.join(", ")}`);
     this.triggerFlashAlert(cities);
   }
 
@@ -491,7 +541,10 @@ class RedAlertPlugin {
    * Exit Notification: category 13, exit title, recent, city, deduped.
    */
   processExitNotificationData(alerts) {
-    if (!this.isAlertTypeActive(ALERT_TYPES.EXIT_NOTIFICATION)) return;
+    if (!this.isAlertTypeActive(ALERT_TYPES.EXIT_NOTIFICATION)) {
+      this.log.debug("⏸️ Exit notifications disabled or outside time window");
+      return;
+    }
     if (!Array.isArray(alerts)) return;
     const now = Date.now();
     const cutoffTime = now - 60000;
@@ -515,10 +568,15 @@ class RedAlertPlugin {
         this.selectedCities.length === 0 ||
         this.selectedCities.includes(alert.data)
     );
-    if (!relevant.length) return;
+    if (!relevant.length) {
+      this.log.debug(
+        `🟢 Found ${alertsToProcess.length} exit notifications, but none for monitored cities`
+      );
+      return;
+    }
     const cities = relevant.map((alert) => alert.data);
     this.log.info(
-      `EXIT NOTIFICATION TRIGGERED for areas: ${cities.join(", ")}`
+      `🟢 EXIT NOTIFICATION TRIGGERED for areas: ${cities.join(", ")}`
     );
     this.triggerExitNotification(cities);
   }
@@ -528,79 +586,141 @@ class RedAlertPlugin {
    */
   isAlertTypeActive(type) {
     const cfg = this.alertsConfig[type];
-    if (!cfg || !cfg.enabled) return false;
+    if (!cfg || !cfg.enabled) {
+      this.log.debug(`⏸️ Alert type ${type} is disabled`);
+      return false;
+    }
     const now = new Date();
     const hour = now.getHours();
-    if (typeof cfg.startHour !== "number" || typeof cfg.endHour !== "number")
+    if (typeof cfg.startHour !== "number" || typeof cfg.endHour !== "number") {
+      this.log.debug(`⏰ Alert type ${type} has no time restrictions`);
       return true;
+    }
     if (cfg.startHour === cfg.endHour) return true;
-    if (cfg.startHour < cfg.endHour)
-      return hour >= cfg.startHour && hour < cfg.endHour;
-    return hour >= cfg.startHour || hour < cfg.endHour;
+
+    let isWithinHours;
+    if (cfg.startHour < cfg.endHour) {
+      isWithinHours = hour >= cfg.startHour && hour < cfg.endHour;
+    } else {
+      isWithinHours = hour >= cfg.startHour || hour < cfg.endHour;
+    }
+
+    this.log.debug(
+      `⏰ Alert type ${type} time check: ${hour}:00 (allowed: ${cfg.startHour}:00-${cfg.endHour}:00) = ${isWithinHours}`
+    );
+    return isWithinHours;
   }
 
-  // --- Alert triggers and Chromecast playback (reset only when file finishes)
-
   triggerEarlyWarning(cities) {
+    this.log.info(`🟡 EARLY WARNING ALERT TRIGGERED`);
+    this.log.info(`📍 Cities: ${cities.join(", ")}`);
+    this.log.info(
+      `⏰ Time: ${new Date().toLocaleString("en-US", {
+        timeZone: "Asia/Jerusalem",
+      })} (Israel time)`
+    );
+
     this.isEarlyWarningActive = true;
     this.earlyWarningActiveCities = cities;
     this.earlyWarningService.updateCharacteristic(
       Characteristic.ContactSensorState,
       Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
     );
+
     if (this.useChromecast) {
-      this.playChromecastMedia(ALERT_TYPES.EARLY_WARNING, () =>
-        this.resetEarlyWarning()
-      );
+      this.playChromecastMedia(ALERT_TYPES.EARLY_WARNING, () => {
+        this.log.info(`✅ Early warning playback completed, resetting state`);
+        this.resetEarlyWarning();
+      });
     } else {
-      // fallback: reset after timeout if no chromecast
+      this.log.info(
+        `⏱️ Chromecast disabled, using ${this.chromecastTimeout}s timeout`
+      );
       setTimeout(() => this.resetEarlyWarning(), this.chromecastTimeout * 1000);
     }
   }
+
   triggerFlashAlert(cities) {
+    this.log.info(`🔴 FLASH/SHELTER ALERT TRIGGERED`);
+    this.log.info(`📍 Cities: ${cities.join(", ")}`);
+    this.log.info(
+      `⏰ Time: ${new Date().toLocaleString("en-US", {
+        timeZone: "Asia/Jerusalem",
+      })} (Israel time)`
+    );
+
     this.isFlashAlertActive = true;
     this.flashAlertActiveCities = cities;
     this.flashAlertService.updateCharacteristic(
       Characteristic.ContactSensorState,
       Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
     );
+
     if (this.useChromecast) {
-      this.playChromecastMedia(ALERT_TYPES.FLASH_SHELTER, () =>
-        this.resetFlashAlert()
-      );
+      this.playChromecastMedia(ALERT_TYPES.FLASH_SHELTER, () => {
+        this.log.info(`✅ Flash alert playback completed, resetting state`);
+        this.resetFlashAlert();
+      });
     } else {
+      this.log.info(
+        `⏱️ Chromecast disabled, using ${this.chromecastTimeout}s timeout`
+      );
       setTimeout(() => this.resetFlashAlert(), this.chromecastTimeout * 1000);
     }
   }
+
   triggerExitNotification(cities) {
+    this.log.info(`🟢 EXIT NOTIFICATION TRIGGERED`);
+    this.log.info(`📍 Cities: ${cities.join(", ")}`);
+    this.log.info(
+      `⏰ Time: ${new Date().toLocaleString("en-US", {
+        timeZone: "Asia/Jerusalem",
+      })} (Israel time)`
+    );
+
     this.isExitNotificationActive = true;
     this.exitNotificationActiveCities = cities;
     this.exitNotificationService.updateCharacteristic(
       Characteristic.ContactSensorState,
       Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
     );
+
     if (this.useChromecast) {
-      this.playChromecastMedia(ALERT_TYPES.EXIT_NOTIFICATION, () =>
-        this.resetExitNotification()
-      );
+      this.playChromecastMedia(ALERT_TYPES.EXIT_NOTIFICATION, () => {
+        this.log.info(
+          `✅ Exit notification playback completed, resetting state`
+        );
+        this.resetExitNotification();
+      });
     } else {
+      this.log.info(
+        `⏱️ Chromecast disabled, using ${this.chromecastTimeout}s timeout`
+      );
       setTimeout(
         () => this.resetExitNotification(),
         this.chromecastTimeout * 1000
       );
     }
   }
+
   stopEarlyWarningPlayback() {
+    this.log.info("🛑 Stopping early warning playback");
     this.resetEarlyWarning();
   }
+
   stopFlashAlertPlayback() {
+    this.log.info("🛑 Stopping flash alert playback");
     this.resetFlashAlert();
   }
+
   stopExitNotificationPlayback() {
+    this.log.info("🛑 Stopping exit notification playback");
     this.resetExitNotification();
   }
+
   resetEarlyWarning() {
     if (this.isEarlyWarningActive) {
+      this.log.info("🔄 Resetting early warning state");
       this.isEarlyWarningActive = false;
       this.earlyWarningActiveCities = [];
       this.earlyWarningService.updateCharacteristic(
@@ -608,10 +728,11 @@ class RedAlertPlugin {
         Characteristic.ContactSensorState.CONTACT_DETECTED
       );
     }
-    this.chromecastPlayingStatus[ALERT_TYPES.EARLY_WARNING].clear();
   }
+
   resetFlashAlert() {
     if (this.isFlashAlertActive) {
+      this.log.info("🔄 Resetting flash alert state");
       this.isFlashAlertActive = false;
       this.flashAlertActiveCities = [];
       this.flashAlertService.updateCharacteristic(
@@ -619,10 +740,11 @@ class RedAlertPlugin {
         Characteristic.ContactSensorState.CONTACT_DETECTED
       );
     }
-    this.chromecastPlayingStatus[ALERT_TYPES.FLASH_SHELTER].clear();
   }
+
   resetExitNotification() {
     if (this.isExitNotificationActive) {
+      this.log.info("🔄 Resetting exit notification state");
       this.isExitNotificationActive = false;
       this.exitNotificationActiveCities = [];
       this.exitNotificationService.updateCharacteristic(
@@ -630,427 +752,535 @@ class RedAlertPlugin {
         Characteristic.ContactSensorState.CONTACT_DETECTED
       );
     }
-    this.chromecastPlayingStatus[ALERT_TYPES.EXIT_NOTIFICATION].clear();
   }
 
   /**
-   * Chromecast playback with advanced Shelter instructions logic.
-   * For shelter devices, plays ballistic instructions per type, with per-device cooldown and per-type file/volume.
-   * On first early-warning/flash-shelter: play windows closed at full volume (not again for 20 min)
-   * On primary: always play closure (low volume if windows closed played)
-   * On exit: always play exit
+   * Chromecast playback with shelter instructions logic and comprehensive logging.
    */
   playChromecastMedia(alertType, onAllComplete) {
+    this.log.info(
+      `🎵 Starting Chromecast playback for alert type: ${alertType}`
+    );
+
     if (!this.devices.length) {
-      this.log.warn("No Chromecast devices available");
+      this.log.warn("❌ No Chromecast devices available");
       if (onAllComplete) onAllComplete();
       return;
     }
-    // URLs for instructions files
-    const instructionFileMap = {
-      primary: this.shelterInstructions.primaryFile,
-      "early-warning": this.shelterInstructions.earlyWarningFile,
-      "flash-shelter": this.shelterInstructions.flashShelterFile,
-      "exit-notification": this.shelterInstructions.exitFile,
-    };
-    const instructionUrlMap = {};
-    for (const k in instructionFileMap) {
-      instructionUrlMap[k] = `${this.baseUrl}/shelter-instructions-${k}`;
+
+    const validDevices = this.devices.filter(
+      (device) =>
+        device &&
+        typeof device.play === "function" &&
+        typeof device.setVolume === "function" &&
+        device.friendlyName &&
+        device.host
+    );
+
+    if (!validDevices.length) {
+      this.log.warn("❌ No valid Chromecast devices available after filtering");
+      if (onAllComplete) onAllComplete();
+      return;
     }
 
-    // Helper: which devices are shelter speakers?
-    const isShelterDevice = (dev) =>
-      (this.shelterInstructions.devices || []).some(
-        (s) =>
-          s.deviceName &&
-          dev.friendlyName &&
-          s.deviceName.trim().toLowerCase() ===
-            dev.friendlyName.trim().toLowerCase() &&
-          s.enabled !== false
-      );
-    // Helper: check cooldown for shelter instructions (per device/type)
-    const canPlayInstructions = (deviceName, alertType) => {
-      const minInterval =
-        (this.shelterInstructions.minIntervalMinutes || 20) * 60 * 1000;
-      const now = Date.now();
-      if (!this.shelterInstructionsLastPlayed[deviceName])
-        this.shelterInstructionsLastPlayed[deviceName] = {};
-      const last =
-        this.shelterInstructionsLastPlayed[deviceName][alertType] || 0;
-      return now - last > minInterval;
-    };
-    const markPlayed = (deviceName, alertType) => {
-      if (!this.shelterInstructionsLastPlayed[deviceName])
-        this.shelterInstructionsLastPlayed[deviceName] = {};
-      this.shelterInstructionsLastPlayed[deviceName][alertType] = Date.now();
-    };
+    this.log.info(
+      `📱 Found ${validDevices.length} valid Chromecast devices: ${validDevices
+        .map((d) => d.friendlyName)
+        .join(", ")}`
+    );
 
-    // For multi-device, only reset state when all devices finished
-    const devicesToWait = new Set();
-    this.devices.forEach((device) => {
-      // Shelter logic
+    // Separate shelter and regular devices
+    const shelterDevices = [];
+    const regularDevices = [];
+
+    validDevices.forEach((device) => {
       const shelterCfg = (this.shelterInstructions.devices || []).find(
         (s) =>
           s.deviceName &&
           device.friendlyName &&
           s.deviceName.trim().toLowerCase() ===
-            device.friendlyName.trim().toLowerCase()
+            device.friendlyName.trim().toLowerCase() &&
+          s.enabled !== false
       );
-      if (shelterCfg && shelterCfg.enabled !== false) {
-        let playType = null;
-        let playUrl = null;
-        let playVolume = null;
-        if (
-          alertType === ALERT_TYPES.EARLY_WARNING ||
-          alertType === ALERT_TYPES.FLASH_SHELTER
-        ) {
-          if (canPlayInstructions(device.friendlyName, alertType)) {
-            playType = alertType;
-            playUrl = instructionUrlMap[alertType];
-            playVolume =
-              shelterCfg.volumes &&
-              typeof shelterCfg.volumes[alertType] === "number"
-                ? shelterCfg.volumes[alertType]
-                : 90;
-            markPlayed(device.friendlyName, alertType);
-          } else {
-            this.log.info(
-              `[Shelter] Skipping ${alertType} instructions on ${device.friendlyName} (cooldown not expired)`
-            );
-            return;
-          }
-        } else if (alertType === ALERT_TYPES.PRIMARY) {
-          playType = "primary";
-          playUrl = instructionUrlMap["primary"];
 
-          // FIXED: Remove the volume cap logic that was causing volume to stay at 20
-          playVolume =
-            shelterCfg.volumes && typeof shelterCfg.volumes.primary === "number"
-              ? shelterCfg.volumes.primary
-              : 50;
+      if (shelterCfg) {
+        shelterDevices.push({ device, config: shelterCfg });
+        this.log.info(`🏠 [Shelter] Device identified: ${device.friendlyName}`);
+      } else {
+        regularDevices.push(device);
+        this.log.info(`📺 [Regular] Device identified: ${device.friendlyName}`);
+      }
+    });
 
-          markPlayed(device.friendlyName, "primary");
-        } else if (alertType === ALERT_TYPES.EXIT_NOTIFICATION) {
-          playType = "exit-notification";
-          playUrl = instructionUrlMap["exit-notification"];
-          playVolume =
-            shelterCfg.volumes &&
-            typeof shelterCfg.volumes["exit-notification"] === "number"
-              ? shelterCfg.volumes["exit-notification"]
-              : 80;
-          markPlayed(device.friendlyName, "exit-notification");
-        }
-        if (playUrl && playType) {
-          this.playOnDevice(
-            device,
-            playUrl,
-            playVolume,
-            playType,
-            devicesToWait,
-            onAllComplete
+    // Process shelter devices
+    shelterDevices.forEach(({ device, config }) => {
+      let mediaUrl,
+        volume,
+        shouldPlay = true;
+
+      // Check cooldown for certain alert types
+      if (
+        alertType === ALERT_TYPES.EARLY_WARNING ||
+        alertType === ALERT_TYPES.FLASH_SHELTER
+      ) {
+        if (!this.canPlayShelterInstructions(device.friendlyName, alertType)) {
+          this.log.info(
+            `🏠 [Shelter] Skipping ${alertType} on ${device.friendlyName} - cooldown active (${this.shelterInstructions.minIntervalMinutes} min)`
+          );
+          shouldPlay = false;
+        } else {
+          this.markShelterInstructionsPlayed(device.friendlyName, alertType);
+          this.log.info(
+            `🏠 [Shelter] Cooldown OK for ${alertType} on ${device.friendlyName}`
           );
         }
-        return;
       }
-      // Non-shelter device logic (unchanged)
-      const volume = this.getAlertVolume(alertType, device);
+
+      if (shouldPlay) {
+        switch (alertType) {
+          case ALERT_TYPES.PRIMARY:
+            mediaUrl = `${this.baseUrl}/shelter-instructions-primary`;
+            volume = config.volumes?.primary || 50;
+            this.log.info(
+              `🏠 [Shelter] PRIMARY alert - playing closure instructions on ${device.friendlyName}`
+            );
+            this.markShelterInstructionsPlayed(device.friendlyName, "primary");
+            break;
+          case ALERT_TYPES.EARLY_WARNING:
+            mediaUrl = `${this.baseUrl}/shelter-instructions-early-warning`;
+            volume = config.volumes?.["early-warning"] || 60;
+            this.log.info(
+              `🏠 [Shelter] EARLY WARNING - playing windows closed instructions on ${device.friendlyName}`
+            );
+            break;
+          case ALERT_TYPES.FLASH_SHELTER:
+            mediaUrl = `${this.baseUrl}/shelter-instructions-flash-shelter`;
+            volume = config.volumes?.["flash-shelter"] || 60;
+            this.log.info(
+              `🏠 [Shelter] FLASH SHELTER - playing windows closed instructions on ${device.friendlyName}`
+            );
+            break;
+          case ALERT_TYPES.EXIT_NOTIFICATION:
+            mediaUrl = `${this.baseUrl}/shelter-instructions-exit-notification`;
+            volume = config.volumes?.["exit-notification"] || 60;
+            this.log.info(
+              `🏠 [Shelter] EXIT NOTIFICATION - playing exit instructions on ${device.friendlyName}`
+            );
+            this.markShelterInstructionsPlayed(
+              device.friendlyName,
+              "exit-notification"
+            );
+            break;
+          case ALERT_TYPES.TEST:
+            mediaUrl = `${this.baseUrl}/test-video`;
+            volume = config.volumes?.primary || 50;
+            this.log.info(`🏠 [Shelter] TEST alert on ${device.friendlyName}`);
+            break;
+          default:
+            this.log.error(
+              `❌ Unknown alert type for shelter device: ${alertType}`
+            );
+            return;
+        }
+
+        this.log.info(
+          `🏠 [Shelter] Playing ${alertType} on ${device.friendlyName} at ${volume}% volume`
+        );
+        this.playWithRetry(device, mediaUrl, 3, alertType, volume, true);
+      }
+    });
+
+    // Process regular devices
+    if (regularDevices.length > 0) {
       let mediaUrl;
       switch (alertType) {
         case ALERT_TYPES.PRIMARY:
           mediaUrl = `${this.baseUrl}/alert-video`;
+          this.log.info(
+            `📺 [Regular] PRIMARY alert - playing standard alert video`
+          );
           break;
         case ALERT_TYPES.TEST:
           mediaUrl = `${this.baseUrl}/test-video`;
+          this.log.info(`📺 [Regular] TEST alert - playing test video`);
           break;
         case ALERT_TYPES.EARLY_WARNING:
           mediaUrl = `${this.baseUrl}/early-warning-video`;
+          this.log.info(
+            `📺 [Regular] EARLY WARNING - playing early warning video`
+          );
           break;
         case ALERT_TYPES.FLASH_SHELTER:
           mediaUrl = `${this.baseUrl}/flash-shelter-video`;
+          this.log.info(
+            `📺 [Regular] FLASH SHELTER - playing flash shelter video`
+          );
           break;
         case ALERT_TYPES.EXIT_NOTIFICATION:
           mediaUrl = `${this.baseUrl}/exit-notification-video`;
+          this.log.info(
+            `📺 [Regular] EXIT NOTIFICATION - playing exit notification video`
+          );
           break;
         default:
-          this.log.error(`Unknown alert type: ${alertType}`);
+          this.log.error(
+            `❌ Unknown alert type for regular devices: ${alertType}`
+          );
           return;
       }
 
-      this.playOnDevice(
-        device,
-        mediaUrl,
-        volume,
-        alertType,
-        devicesToWait,
-        onAllComplete
+      regularDevices.forEach((device) => {
+        const volume = this.getAlertVolume(alertType, device);
+        this.log.info(
+          `📺 [Regular] Playing ${alertType} on ${device.friendlyName} at ${volume}% volume`
+        );
+        this.playWithRetry(device, mediaUrl, 3, alertType, volume, false);
+      });
+    }
+
+    // Simple timeout fallback like your original working code
+    const timeoutMs = this.chromecastTimeout * 1000;
+    this.log.info(
+      `⏱️ Setting ${this.chromecastTimeout}s timeout for ${alertType} completion`
+    );
+    setTimeout(() => {
+      this.log.info(
+        `✅ Timeout reached for ${alertType} - calling completion callback`
       );
+      if (onAllComplete) onAllComplete();
+    }, timeoutMs);
+  }
+
+  playWithRetry(
+    device,
+    mediaUrl,
+    retries,
+    alertType,
+    volume,
+    isShelter = false
+  ) {
+    const deviceType = isShelter ? "🏠 [Shelter]" : "📺 [Regular]";
+    this.log.debug(
+      `${deviceType} Attempting playback on ${device.friendlyName} (${device.host})`
+    );
+    this.log.debug(`${deviceType} Media URL: ${mediaUrl}`);
+    this.log.debug(`${deviceType} Target volume: ${volume}%`);
+
+    device.play(mediaUrl, (err) => {
+      if (err && retries > 0) {
+        this.log.warn(
+          `${deviceType} ⚠️ Playback failed on ${device.friendlyName}, retrying (${retries} attempts left): ${err.message}`
+        );
+        setTimeout(
+          () =>
+            this.playWithRetry(
+              device,
+              mediaUrl,
+              retries - 1,
+              alertType,
+              volume,
+              isShelter
+            ),
+          2000
+        );
+      } else if (err) {
+        this.log.error(
+          `${deviceType} ❌ Final playback failure on ${device.friendlyName}: ${err.message}`
+        );
+      } else {
+        this.log.info(
+          `${deviceType} ▶️ Successfully started playback on ${device.friendlyName}`
+        );
+        this.log.debug(
+          `${deviceType} Now setting volume to ${volume}% on ${device.friendlyName}`
+        );
+
+        device.setVolume(volume / 100, (volErr) => {
+          if (volErr) {
+            this.log.warn(
+              `${deviceType} ⚠️ Failed to set volume on ${device.friendlyName}: ${volErr.message}`
+            );
+          } else {
+            this.log.info(
+              `${deviceType} 🔊 Volume set to ${volume}% on ${device.friendlyName}`
+            );
+          }
+        });
+      }
     });
   }
 
-  /**
-   * FIXED: Improved device playback with better error handling for Chromecast connections
-   */
-  playOnDevice(
-    device,
-    mediaUrl,
-    volume,
-    alertType,
-    devicesToWait,
-    onAllComplete
-  ) {
-    devicesToWait.add(device.host);
+  canPlayShelterInstructions(deviceName, alertType) {
+    const minInterval =
+      (this.shelterInstructions.minIntervalMinutes || 20) * 60 * 1000;
+    const now = Date.now();
+    if (!this.shelterInstructionsLastPlayed[deviceName])
+      this.shelterInstructionsLastPlayed[deviceName] = {};
+    const last = this.shelterInstructionsLastPlayed[deviceName][alertType] || 0;
+    const canPlay = now - last > minInterval;
 
-    // Add connection validation before attempting to play
-    if (!device.client || device.client.readyState !== "open") {
-      this.log.warn(
-        `Device ${device.friendlyName} not properly connected, skipping playback`
+    if (!canPlay) {
+      const minutesLeft = Math.ceil((minInterval - (now - last)) / 60000);
+      this.log.debug(
+        `🏠 [Shelter] Cooldown check for ${deviceName}/${alertType}: ${minutesLeft} minutes remaining`
       );
-      devicesToWait.delete(device.host);
-      this.checkAllFinished(devicesToWait, onAllComplete, alertType);
-      return;
     }
 
-    const playWithRetry = (retryCount = 0) => {
-      device.play(mediaUrl, (err) => {
-        if (err) {
-          this.log.error(
-            `Failed to play ${alertType} on ${device.friendlyName}: ${err.message}`
-          );
-
-          // Retry once for connection issues
-          if (retryCount === 0 && err.message.includes("ECONNRESET")) {
-            this.log.info(`Retrying playback on ${device.friendlyName}...`);
-            setTimeout(() => playWithRetry(1), 1000);
-            return;
-          }
-
-          devicesToWait.delete(device.host);
-          this.checkAllFinished(devicesToWait, onAllComplete, alertType);
-        } else {
-          // Set volume with error handling
-          device.setVolume(volume / 100, (volErr) => {
-            if (volErr) {
-              this.log.warn(
-                `Failed to set volume on ${device.friendlyName}: ${volErr.message}`
-              );
-            } else {
-              this.log.info(
-                `Playing ${alertType} on ${device.friendlyName} at volume ${volume}%`
-              );
-            }
-          });
-        }
-      });
-
-      // Set up finished event listener (only once per device per playback)
-      const finishedHandler = () => {
-        this.log.info(
-          `Finished playback for ${alertType} on ${device.friendlyName}`
-        );
-        devicesToWait.delete(device.host);
-        device.removeListener("finished", finishedHandler);
-        this.checkAllFinished(devicesToWait, onAllComplete, alertType);
-      };
-
-      device.once("finished", finishedHandler);
-
-      // Add timeout as fallback
-      setTimeout(() => {
-        if (devicesToWait.has(device.host)) {
-          this.log.warn(
-            `Playback timeout for ${alertType} on ${device.friendlyName}`
-          );
-          devicesToWait.delete(device.host);
-          device.removeListener("finished", finishedHandler);
-          this.checkAllFinished(devicesToWait, onAllComplete, alertType);
-        }
-      }, this.chromecastTimeout * 1000);
-    };
-
-    playWithRetry();
+    return canPlay;
   }
 
-  /**
-   * Helper function to check if all devices finished playing
-   */
-  checkAllFinished(devicesToWait, onAllComplete, alertType) {
-    if (devicesToWait.size === 0 && typeof onAllComplete === "function") {
-      this.log.info(
-        `All Chromecast devices finished playback for ${alertType}`
-      );
-      onAllComplete();
-    }
+  markShelterInstructionsPlayed(deviceName, alertType) {
+    if (!this.shelterInstructionsLastPlayed[deviceName])
+      this.shelterInstructionsLastPlayed[deviceName] = {};
+    this.shelterInstructionsLastPlayed[deviceName][alertType] = Date.now();
+    this.log.debug(
+      `🏠 [Shelter] Marked ${alertType} as played on ${deviceName} at ${new Date().toISOString()}`
+    );
   }
-
-  // --- Chromecast discovery and per-device/per-alert volume
 
   setupChromecastDiscovery() {
+    this.log.info("🔍 Setting up Chromecast discovery...");
     this.initializeChromecastClient();
     setInterval(() => {
-      this.log.info("Reinitializing Chromecast client for rediscovery...");
+      this.log.info("🔄 Reinitializing Chromecast client for rediscovery...");
       this.devices = [];
       this.initializeChromecastClient();
     }, 300000);
   }
+
   initializeChromecastClient() {
-    this.chromecastClient = new ChromecastAPI();
-    this.chromecastClient.on("device", (device) => {
-      if (!device || !device.host || !device.friendlyName) return;
-      if (
-        typeof device.play !== "function" ||
-        typeof device.setVolume !== "function"
-      )
-        return;
-      if (!this.devices.some((d) => d.host === device.host))
-        this.devices.push(device);
-      this.log.info(
-        `Chromecast discovered: ${device.friendlyName} at ${device.host}`
+    try {
+      this.chromecastClient = new ChromecastAPI();
+      this.chromecastClient.on("device", (device) => {
+        if (!device || !device.host || !device.friendlyName) {
+          this.log.warn(`⚠️ Invalid Chromecast device data received`);
+          return;
+        }
+        if (
+          typeof device.play !== "function" ||
+          typeof device.setVolume !== "function"
+        ) {
+          this.log.warn(
+            `⚠️ Chromecast '${device.friendlyName}' lacks required functions`
+          );
+          return;
+        }
+        if (!this.devices.some((d) => d.host === device.host)) {
+          this.devices.push(device);
+          this.log.info(
+            `✅ Chromecast discovered: ${device.friendlyName} at ${device.host}`
+          );
+        } else {
+          this.log.debug(
+            `🔄 Chromecast rediscovered: ${device.friendlyName} at ${device.host}`
+          );
+        }
+      });
+      this.chromecastClient.on("error", (err) => {
+        this.log.error(`❌ ChromecastAPI error: ${err.message}`);
+      });
+    } catch (error) {
+      this.log.error(`❌ Failed to initialize Chromecast: ${error.message}`);
+      this.useChromecast = false;
+      this.devices = [];
+      this.log.warn(
+        "⚠️ Chromecast functionality disabled due to initialization failure"
       );
-    });
-    this.chromecastClient.on("error", (err) => {
-      this.log.error(`ChromecastAPI error: ${err.message}`);
-    });
+    }
   }
+
   getAlertVolume(alertType, device) {
     const devName =
       device && device.friendlyName ? device.friendlyName.toLowerCase() : "";
     const devOverride = this.deviceOverrides[devName];
+
+    let volume = this.chromecastVolume; // default
+    let source = "default";
+
     if (
       devOverride &&
       devOverride.alerts[alertType] &&
       typeof devOverride.alerts[alertType].volume === "number"
-    )
-      return devOverride.alerts[alertType].volume;
-    if (devOverride && typeof devOverride.volume === "number")
-      return devOverride.volume;
-    if (
+    ) {
+      volume = devOverride.alerts[alertType].volume;
+      source = `device-specific ${alertType}`;
+    } else if (devOverride && typeof devOverride.volume === "number") {
+      volume = devOverride.volume;
+      source = "device-specific default";
+    } else if (
       this.alertsConfig[alertType] &&
       typeof this.alertsConfig[alertType].volume === "number"
-    )
-      return this.alertsConfig[alertType].volume;
-    return this.chromecastVolume;
-  }
+    ) {
+      volume = this.alertsConfig[alertType].volume;
+      source = `alert-type ${alertType}`;
+    }
 
-  // --- Media server for Chromecast file delivery
+    this.log.debug(
+      `📺 [Volume] ${device.friendlyName}: ${volume}% (source: ${source})`
+    );
+    return volume;
+  }
 
   setupMediaServer() {
-    this.server = express();
-    const mediaDir = path.join(this.api.user.storagePath(), "red-alert-media");
-    fs.ensureDirSync(mediaDir);
-    this.server.use(express.static(mediaDir));
-    this.server.get("/alert-video", (req, res) =>
-      res.sendFile(path.join(mediaDir, this.alertVideoPath))
-    );
-    this.server.get("/test-video", (req, res) =>
-      res.sendFile(path.join(mediaDir, this.testVideoPath))
-    );
-    this.server.get("/early-warning-video", (req, res) =>
-      res.sendFile(path.join(mediaDir, this.earlyWarningVideoPath))
-    );
-    this.server.get("/flash-shelter-video", (req, res) =>
-      res.sendFile(path.join(mediaDir, this.flashAlertShelterVideoPath))
-    );
-    this.server.get("/exit-notification-video", (req, res) =>
-      res.sendFile(path.join(mediaDir, this.exitNotificationVideoPath))
-    );
-    // Shelter instructions endpoints
-    this.server.get("/shelter-instructions-primary", (req, res) =>
-      res.sendFile(
-        path.join(
-          mediaDir,
-          this.shelterInstructions.primaryFile ||
-            this.ballisticClosureFile ||
-            "ballistic_closure.mp4"
-        )
-      )
-    );
-    this.server.get("/shelter-instructions-early-warning", (req, res) =>
-      res.sendFile(
-        path.join(
-          mediaDir,
-          this.shelterInstructions.earlyWarningFile ||
-            this.windowsClosedFile ||
-            "ballistic_windows_closed.mp4"
-        )
-      )
-    );
-    this.server.get("/shelter-instructions-flash-shelter", (req, res) =>
-      res.sendFile(
-        path.join(
-          mediaDir,
-          this.shelterInstructions.flashShelterFile ||
-            this.windowsClosedFile ||
-            "ballistic_windows_closed.mp4"
-        )
-      )
-    );
-    this.server.get("/shelter-instructions-exit-notification", (req, res) =>
-      res.sendFile(
-        path.join(
-          mediaDir,
-          this.shelterInstructions.exitFile ||
-            this.shelterExitFile ||
-            "exit.mp4"
-        )
-      )
-    );
-    this.server.get("/health", (req, res) => {
-      this.log.debug("Media server health check");
-      res.status(200).send("OK");
-    });
-    this.server
-      .listen(this.serverPort, () => {
-        this.log.info(`Media server running on port ${this.serverPort}`);
-      })
-      .on("error", (err) => {
-        this.log.error(`Media server error: ${err.message}`);
+    try {
+      this.log.info(`🌐 Setting up media server on port ${this.serverPort}...`);
+      this.server = express();
+      const mediaDir = path.join(
+        this.api.user.storagePath(),
+        "red-alert-media"
+      );
+      fs.ensureDirSync(mediaDir);
+      this.server.use(express.static(mediaDir));
+
+      this.server.get("/alert-video", (req, res) => {
+        this.log.debug("📹 Serving alert video");
+        res.sendFile(path.join(mediaDir, this.alertVideoPath));
       });
-  }
-  copyDefaultMediaFiles() {
-    const mediaDir = path.join(this.api.user.storagePath(), "red-alert-media");
-    const pluginDir = path.join(__dirname, "media");
-    if (fs.existsSync(pluginDir)) {
-      fs.copySync(pluginDir, mediaDir, { overwrite: false });
-      this.log.info("Default media files copied");
+      this.server.get("/test-video", (req, res) => {
+        this.log.debug("📹 Serving test video");
+        res.sendFile(path.join(mediaDir, this.testVideoPath));
+      });
+      this.server.get("/early-warning-video", (req, res) => {
+        this.log.debug("📹 Serving early warning video");
+        res.sendFile(path.join(mediaDir, this.earlyWarningVideoPath));
+      });
+      this.server.get("/flash-shelter-video", (req, res) => {
+        this.log.debug("📹 Serving flash shelter video");
+        res.sendFile(path.join(mediaDir, this.flashAlertShelterVideoPath));
+      });
+      this.server.get("/exit-notification-video", (req, res) => {
+        this.log.debug("📹 Serving exit notification video");
+        res.sendFile(path.join(mediaDir, this.exitNotificationVideoPath));
+      });
+
+      // Shelter instructions endpoints
+      this.server.get("/shelter-instructions-primary", (req, res) => {
+        this.log.debug("🏠 Serving primary shelter instructions");
+        res.sendFile(
+          path.join(
+            mediaDir,
+            this.shelterInstructions.primaryFile ||
+              this.ballisticClosureFile ||
+              "ballistic_closure.mp4"
+          )
+        );
+      });
+      this.server.get("/shelter-instructions-early-warning", (req, res) => {
+        this.log.debug("🏠 Serving early warning shelter instructions");
+        res.sendFile(
+          path.join(
+            mediaDir,
+            this.shelterInstructions.earlyWarningFile ||
+              this.windowsClosedFile ||
+              "ballistic_windows_closed.mp4"
+          )
+        );
+      });
+      this.server.get("/shelter-instructions-flash-shelter", (req, res) => {
+        this.log.debug("🏠 Serving flash shelter instructions");
+        res.sendFile(
+          path.join(
+            mediaDir,
+            this.shelterInstructions.flashShelterFile ||
+              this.windowsClosedFile ||
+              "ballistic_windows_closed.mp4"
+          )
+        );
+      });
+      this.server.get("/shelter-instructions-exit-notification", (req, res) => {
+        this.log.debug("🏠 Serving exit notification shelter instructions");
+        res.sendFile(
+          path.join(
+            mediaDir,
+            this.shelterInstructions.exitFile ||
+              this.shelterExitFile ||
+              "exit.mp4"
+          )
+        );
+      });
+
+      this.server.get("/health", (req, res) => {
+        this.log.debug("💚 Media server health check");
+        res.status(200).send("OK");
+      });
+
+      this.server
+        .listen(this.serverPort, () => {
+          this.log.info(`✅ Media server running on ${this.baseUrl}`);
+        })
+        .on("error", (err) => {
+          this.log.error(`❌ Media server error: ${err.message}`);
+        });
+    } catch (error) {
+      this.log.error(`❌ Failed to setup media server: ${error.message}`);
     }
   }
 
-  // --- WebSocket for primary alerts
+  copyDefaultMediaFiles() {
+    try {
+      const mediaDir = path.join(
+        this.api.user.storagePath(),
+        "red-alert-media"
+      );
+      const pluginDir = path.join(__dirname, "media");
+      if (fs.existsSync(pluginDir)) {
+        fs.copySync(pluginDir, mediaDir, { overwrite: false });
+        this.log.info("📁 Default media files copied");
+      } else {
+        this.log.warn("⚠️ No default media directory found");
+      }
+    } catch (error) {
+      this.log.error(`❌ Error copying media files: ${error.message}`);
+    }
+  }
 
   setupWebSocket() {
-    if (this.wsClient) this.wsClient.terminate();
-    this.log.info(`Connecting to WebSocket: ${this.wsUrl}`);
+    if (this.wsClient) {
+      this.log.debug("🔌 Terminating existing WebSocket connection");
+      this.wsClient.terminate();
+    }
+    this.log.info(`🔌 Connecting to WebSocket: ${this.wsUrl}`);
     this.wsClient = new WebSocket(this.wsUrl);
+
     this.wsClient.on("open", () => {
-      this.log.info("WebSocket connected");
+      this.log.info("✅ WebSocket connected");
       this.log.info(
-        `Monitoring cities: ${this.selectedCities.join(", ") || "all"}`
+        `👀 Monitoring cities: ${this.selectedCities.join(", ") || "all"}`
       );
-      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
     });
-    this.wsClient.on("message", (data) =>
-      this.handleAlertMessage(data.toString())
-    );
+
+    this.wsClient.on("message", (data) => {
+      this.handleAlertMessage(data.toString());
+    });
+
     this.wsClient.on("error", (error) => {
-      this.log.error(`WebSocket error: ${error.message}`);
+      this.log.error(`❌ WebSocket error: ${error.message}`);
       this.scheduleReconnect();
     });
+
     this.wsClient.on("close", () => {
-      this.log.warn("WebSocket connection closed");
+      this.log.warn("⚠️ WebSocket connection closed");
       this.scheduleReconnect();
     });
+
     const pingInterval = setInterval(() => {
       if (this.wsClient && this.wsClient.readyState === WebSocket.OPEN) {
         this.wsClient.ping();
+        this.log.debug("🏓 WebSocket ping sent");
       } else {
         clearInterval(pingInterval);
       }
     }, 30000);
   }
+
   scheduleReconnect() {
     if (!this.reconnectTimer) {
       this.log.info(
-        `Scheduling WebSocket reconnect in ${
+        `🔄 Scheduling WebSocket reconnect in ${
           this.reconnectInterval / 1000
         } seconds`
       );
@@ -1060,18 +1290,25 @@ class RedAlertPlugin {
       }, this.reconnectInterval);
     }
   }
+
   handleAlertMessage(message) {
+    this.log.debug(
+      `📡 WebSocket message received: ${message.substring(0, 100)}...`
+    );
+
     let alert;
     try {
       alert = JSON.parse(message);
     } catch (err) {
-      this.log.warn(`Invalid JSON in WebSocket message: ${err.message}`);
+      this.log.warn(`❌ Invalid JSON in WebSocket message: ${err.message}`);
       return;
     }
+
     if (!alert || !alert.areas || typeof alert.areas !== "string") {
-      this.log.warn("Invalid alert message format");
+      this.log.warn("❌ Invalid alert message format");
       return;
     }
+
     const areas = alert.areas
       .split(",")
       .map((s) => s.trim())
@@ -1084,23 +1321,47 @@ class RedAlertPlugin {
     );
     const isTest = alert.alert_type === 0;
 
+    this.log.debug(`📡 Alert areas: ${areas.join(", ")}`);
+    this.log.debug(`📍 Relevant areas: ${relevantAreas.join(", ")}`);
+    this.log.debug(`🧪 Is test: ${isTest}`);
+
     if (relevantAreas.length > 0) {
+      this.log.info(`🚨 PRIMARY ALERT TRIGGERED`);
+      this.log.info(`📍 Areas: ${relevantAreas.join(", ")}`);
       this.log.info(
-        `PRIMARY ALERT triggered for areas: ${relevantAreas.join(", ")}`
+        `⏰ Time: ${new Date().toLocaleString("en-US", {
+          timeZone: "Asia/Jerusalem",
+        })} (Israel time)`
       );
-      if (this.isEarlyWarningActive) this.stopEarlyWarningPlayback();
-      if (this.isFlashAlertActive) this.stopFlashAlertPlayback();
-      if (this.isExitNotificationActive) this.stopExitNotificationPlayback();
+      this.log.info(`🧪 Alert Type: ${isTest ? "TEST" : "REAL"}`);
+
+      if (this.isEarlyWarningActive) {
+        this.log.info("🟡 Stopping early warning for primary alert");
+        this.stopEarlyWarningPlayback();
+      }
+      if (this.isFlashAlertActive) {
+        this.log.info("🔴 Stopping flash alert for primary alert");
+        this.stopFlashAlertPlayback();
+      }
+      if (this.isExitNotificationActive) {
+        this.log.info("🟢 Stopping exit notification for primary alert");
+        this.stopExitNotificationPlayback();
+      }
+
       this.isAlertActive = true;
       this.alertActiveCities = relevantAreas;
       this.service.updateCharacteristic(
         Characteristic.ContactSensorState,
         Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
       );
+
       if (this.useChromecast) {
         this.playChromecastMedia(
           isTest ? ALERT_TYPES.TEST : ALERT_TYPES.PRIMARY,
           () => {
+            this.log.info(
+              `✅ Primary alert playback completed, resetting state`
+            );
             this.isAlertActive = false;
             this.alertActiveCities = [];
             this.service.updateCharacteristic(
@@ -1110,9 +1371,12 @@ class RedAlertPlugin {
           }
         );
       } else {
+        this.log.info(
+          `⏱️ Chromecast disabled, using ${this.chromecastTimeout}s timeout`
+        );
         setTimeout(() => {
           if (this.isAlertActive) {
-            this.log.info("Auto-resetting primary alert state");
+            this.log.info("✅ Auto-resetting primary alert state");
             this.isAlertActive = false;
             this.alertActiveCities = [];
             this.service.updateCharacteristic(
@@ -1140,7 +1404,7 @@ class RedAlertPlugin {
         alert.category
       }_${titleHash}`;
     } catch (error) {
-      this.log.error(`Error generating alert ID: ${error.message}`);
+      this.log.error(`❌ Error generating alert ID: ${error.message}`);
       return `${Date.now()}_unknown_${alert?.category || "unknown"}`;
     }
   }
@@ -1149,16 +1413,22 @@ class RedAlertPlugin {
    * Get the first non-internal IPv4 address, fallback to 127.0.0.1.
    */
   getIpAddress() {
-    const nets = os.networkInterfaces();
-    for (const name of Object.keys(nets)) {
-      for (const net of nets[name]) {
-        if (!net.internal && net.family === "IPv4") {
-          return net.address;
+    try {
+      const nets = os.networkInterfaces();
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+          if (!net.internal && net.family === "IPv4") {
+            this.log.debug(`🌐 Using IP address: ${net.address}`);
+            return net.address;
+          }
         }
       }
+      this.log.warn("⚠️ No valid network interface found, using localhost");
+      return "127.0.0.1";
+    } catch (error) {
+      this.log.error(`❌ Error getting IP address: ${error.message}`);
+      return "127.0.0.1";
     }
-    this.log.warn("No valid network interface found, using localhost");
-    return "127.0.0.1";
   }
 }
 
