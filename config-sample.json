@@ -1,26 +1,38 @@
 {
-    "accessory": "RedAlert",
     "name": "Red Alert",
+    "accessory": "RedAlert",
     "cities": [
         "רעננה"
     ],
+    "tzofar": {
+        "enabled": true,
+        "wsUrl": "wss://ws.tzevaadom.co.il/socket?platform=ANDROID",
+        "reconnectInterval": 10000,
+        "maxReconnectInterval": 60000,
+        "maxReconnectAttempts": 10,
+        "pingInterval": 60000,
+        "pongTimeout": 420000
+    },
+    "citiesJsonPath": "/home/yalihart/.homebridge/cities.json",
+    "exitNotificationsPollInterval": 3000,
+    "orefExitUrl": "https://www.oref.org.il/warningMessages/alert/Alerts.json",
     "useChromecast": true,
-    "chromecastVolume": 90,
+    "chromecastVolume": 80,
     "chromecastTimeout": 30,
     "serverPort": 8095,
-    "wsUrl": "ws://ws.cumta.morhaviv.com:25565/ws",
-    "reconnectInterval": 5000,
-    "orefHistoryUrl": "https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json",
+    "alertVideoPath": "alert.mp4",
+    "testVideoPath": "test.mp4",
+    "earlyWarningVideoPath": "early.mp4",
+    "flashAlertShelterVideoPath": "flash-shelter.mp4",
+    "exitNotificationVideoPath": "exit.mp4",
     "alerts": {
         "early-warning": {
             "enabled": true,
-            "startHour": 9,
-            "endHour": 21,
-            "volume": 75
+            "volume": 65
         },
         "flash-shelter": {
             "enabled": true,
-            "volume": 75
+            "volume": 65
         },
         "exit-notification": {
             "enabled": true,
@@ -33,10 +45,10 @@
             "volume": 40,
             "alerts": {
                 "early-warning": {
-                    "volume": 25
+                    "volume": 20
                 },
                 "flash-shelter": {
-                    "volume": 20
+                    "volume": 15
                 },
                 "exit-notification": {
                     "volume": 15
@@ -48,10 +60,25 @@
             "volume": 40,
             "alerts": {
                 "early-warning": {
-                    "volume": 25
+                    "volume": 20
                 },
                 "flash-shelter": {
+                    "volume": 15
+                },
+                "exit-notification": {
+                    "volume": 15
+                }
+            }
+        },
+        {
+            "deviceName": "noa tv",
+            "volume": 40,
+            "alerts": {
+                "early-warning": {
                     "volume": 20
+                },
+                "flash-shelter": {
+                    "volume": 15
                 },
                 "exit-notification": {
                     "volume": 15
@@ -63,10 +90,10 @@
             "volume": 40,
             "alerts": {
                 "early-warning": {
-                    "volume": 25
+                    "volume": 20
                 },
                 "flash-shelter": {
-                    "volume": 20
+                    "volume": 15
                 },
                 "exit-notification": {
                     "volume": 15
@@ -74,20 +101,15 @@
             }
         }
     ],
-    "alertVideoPath": "alert.mp4",
-    "earlyWarningVideoPath": "early.mp4",
-    "flashAlertShelterVideoPath": "flash-shelter.mp4",
-    "exitNotificationVideoPath": "exit.mp4",
-    "testVideoPath": "test.mp4",
     "shelterInstructions": {
         "devices": [
             {
-                "deviceName": "Shelter speaker",
                 "enabled": true,
+                "deviceName": "Shelter speaker",
                 "volumes": {
                     "primary": 50,
                     "early-warning": 60,
-                    "flash-shelter": 60,
+                    "flash-shelter": 40,
                     "exit-notification": 60
                 }
             }
