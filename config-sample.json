@@ -1,38 +1,31 @@
 {
-    "name": "Red Alert",
     "accessory": "RedAlert",
+    "name": "Red Alert",
     "cities": [
         "רעננה"
     ],
-    "tzofar": {
-        "enabled": true,
-        "wsUrl": "wss://ws.tzevaadom.co.il/socket?platform=ANDROID",
-        "reconnectInterval": 10000,
-        "maxReconnectInterval": 60000,
-        "maxReconnectAttempts": 10,
-        "pingInterval": 60000,
-        "pongTimeout": 420000
-    },
-    "citiesJsonPath": "/home/yalihart/.homebridge/cities.json",
-    "exitNotificationsPollInterval": 3000,
-    "orefExitUrl": "https://www.oref.org.il/warningMessages/alert/Alerts.json",
+    "citiesJsonPath": "cities.json",
     "useChromecast": true,
     "chromecastVolume": 80,
     "chromecastTimeout": 30,
     "serverPort": 8095,
     "alertVideoPath": "alert.mp4",
-    "testVideoPath": "test.mp4",
     "earlyWarningVideoPath": "early.mp4",
     "flashAlertShelterVideoPath": "flash-shelter.mp4",
     "exitNotificationVideoPath": "exit.mp4",
+    "testVideoPath": "test.mp4",
+    "orefPollInterval": 3000,
+    "orefUrl": "https://www.oref.org.il/warningMessages/alert/Alerts.json",
     "alerts": {
         "early-warning": {
             "enabled": true,
-            "volume": 65
+            "volume": 55
         },
         "flash-shelter": {
-            "enabled": true,
-            "volume": 65
+            "enabled": false,
+            "startHour": 9,
+            "endHour": 21,
+            "volume": 60
         },
         "exit-notification": {
             "enabled": true,
@@ -102,22 +95,31 @@
         }
     ],
     "shelterInstructions": {
-        "devices": [
-            {
-                "enabled": true,
-                "deviceName": "Shelter speaker",
-                "volumes": {
-                    "primary": 50,
-                    "early-warning": 60,
-                    "flash-shelter": 40,
-                    "exit-notification": 60
-                }
-            }
-        ],
         "primaryFile": "ballistic_closure.mp4",
         "earlyWarningFile": "ballistic_windows_closed.mp4",
         "flashShelterFile": "ballistic_windows_closed.mp4",
         "exitFile": "exit.mp4",
-        "minIntervalMinutes": 20
+        "minIntervalMinutes": 20,
+        "devices": [
+            {
+                "deviceName": "Shelter speaker",
+                "enabled": true,
+                "volumes": {
+                    "primary": 65,
+                    "early-warning": 65,
+                    "flash-shelter": 40,
+                    "exit-notification": 60
+                }
+            }
+        ]
+    },
+    "tzofar": {
+        "enabled": true,
+        "wsUrl": "wss://ws.tzevaadom.co.il/socket?platform=ANDROID",
+        "reconnectInterval": 10000,
+        "maxReconnectInterval": 60000,
+        "maxReconnectAttempts": 10,
+        "pingInterval": 60000,
+        "pongTimeout": 420000
     }
 }

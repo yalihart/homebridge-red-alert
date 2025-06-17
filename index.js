@@ -4,13 +4,14 @@
  *
  * Features:
  * - Tzofar WebSocket for real-time primary alerts and early warnings
- * - OREF polling for exit notifications
- * - Per-alert-type enable/time/volume controls
+ * - OREF polling for flash alerts and exit notifications
+ * - Per-alert-type enable/time/volume controls with time restrictions
  * - Per-device, per-alert-type volume
  * - City filtering with ID-based matching for early warnings
  * - 2-minute debounce for duplicate alerts
  * - Enhanced early warning validation with Hebrew keywords
  * - Shelter instruction devices with cooldown periods
+ * - Event-based Chromecast completion tracking
  *
  * Author: Yali Hart & AI Friends
  * License: MIT
@@ -71,6 +72,13 @@ const EXIT_NOTIFICATION_TITLES = {
   TERRORIST: "חדירת כלי טיס עוין - האירוע הסתיים",
   MISSILE: "ירי רקטות וטילים -  האירוע הסתיים",
 };
+
+// Flash alert titles
+const FLASH_ALERT_TITLES = [
+  "שהייה בסמיכות למרחב מוגן",
+  "בדקות הקרובות צפויות להתקבל התרעות באזורך",
+  "היכנסו למרחב המוגן ושהו בו 10 דקות",
+];
 
 const DEFAULT_ALERTS_CONFIG = {
   [ALERT_TYPES.EARLY_WARNING]: {
@@ -144,7 +152,7 @@ class TzofarWebSocketClient {
     this.ws.on("message", (data) => {
       const message = data.toString();
       if (message.length > 0) {
-        this.plugin.log.debug(
+        this.plugin.log.info(
           `📡 Tzofar message: ${message.substring(0, 100)}...`
         );
         this.handleMessage(message);
@@ -176,17 +184,31 @@ class TzofarWebSocketClient {
     try {
       const data = JSON.parse(message);
 
+      // Use .info instead of .debug so we can see all messages
+      this.plugin.log.info(`📡 Received Tzofar message type: ${data.type}`);
+
       if (data.type === "ALERT") {
+        this.plugin.log.info(
+          `🚨 Processing ALERT: ${JSON.stringify(data.data)}`
+        );
         this.plugin.handlePrimaryAlert(data.data);
       } else if (data.type === "SYSTEM_MESSAGE") {
+        this.plugin.log.info(
+          `🟡 Processing SYSTEM_MESSAGE: ${JSON.stringify(data.data)}`
+        );
         this.plugin.handleEarlyWarning(data.data);
       } else {
-        this.plugin.log.debug(`📋 Unknown Tzofar message type: ${data.type}`);
+        this.plugin.log.info(
+          `📋 Unknown Tzofar message type: ${
+            data.type
+          } - Full data: ${JSON.stringify(data)}`
+        );
       }
     } catch (error) {
       this.plugin.log.warn(
         `❌ Invalid JSON in Tzofar message: ${error.message}`
       );
+      this.plugin.log.warn(`❌ Raw message: ${message}`);
     }
   }
 
@@ -304,11 +326,10 @@ class RedAlertPlugin {
       pongTimeout: config.tzofar?.pongTimeout || 420000,
     };
 
-    // --- Exit notifications polling
-    this.exitNotificationsPollInterval =
-      config.exitNotificationsPollInterval || 3000;
-    this.orefExitUrl =
-      config.orefExitUrl ||
+    // --- OREF polling configuration
+    this.orefPollInterval = config.orefPollInterval || 3000;
+    this.orefUrl =
+      config.orefUrl ||
       "https://www.oref.org.il/warningMessages/alert/Alerts.json";
 
     // --- Cities data management
@@ -356,11 +377,12 @@ class RedAlertPlugin {
     this.flashAlertActiveCities = [];
     this.exitNotificationActiveCities = [];
     this.tzofarClient = null;
-    this.exitNotificationsTimer = null;
+    this.orefTimer = null;
     this.devices = [];
 
     // Deduplication sets
     this.processedExitNotifications = new Set();
+    this.processedFlashAlerts = new Set();
 
     // --- HomeKit services
     this.service = new Service.ContactSensor(this.name);
@@ -398,7 +420,7 @@ class RedAlertPlugin {
         if (this.useChromecast) this.setupChromecastDiscovery();
 
         this.setupTzofarWebSocket();
-        this.setupExitNotificationsMonitoring();
+        this.setupOrefAlertsMonitoring();
         this.setupCleanupTimer();
 
         this.log.info("✅ Red Alert plugin initialization complete");
@@ -564,7 +586,7 @@ class RedAlertPlugin {
       })} (Israel time)`
     );
 
-    // Trigger primary alert
+    // Trigger primary alert (PRIMARY ALERTS ARE NEVER TIME-RESTRICTED)
     this.isAlertActive = true;
     this.alertActiveCities = debouncedCities;
     this.service.updateCharacteristic(
@@ -606,7 +628,7 @@ class RedAlertPlugin {
     );
 
     if (!hasValidTitle) {
-      this.log.debug(
+      this.log.info(
         "📋 System message title doesn't match early warning pattern"
       );
       return false;
@@ -618,7 +640,7 @@ class RedAlertPlugin {
       bodyHe.includes(keyword)
     );
 
-    this.log.debug(
+    this.log.info(
       `🔍 Early warning validation - Title: ${hasValidTitle}, Content: ${hasValidContent}`
     );
     return hasValidContent;
@@ -626,24 +648,27 @@ class RedAlertPlugin {
 
   // Early warning handler (from Tzofar SYSTEM_MESSAGE)
   handleEarlyWarning(systemMessage) {
-    this.log.debug(`🟡 Processing system message: ${systemMessage.titleHe}`);
+    this.log.info(`🟡 Processing system message: ${systemMessage.titleHe}`);
+    this.log.info(`🟡 Full system message: ${JSON.stringify(systemMessage)}`);
 
     // Validate this is actually an early warning message
     if (!this.isEarlyWarningMessage(systemMessage)) {
-      this.log.debug("📋 System message is not an early warning - ignoring");
+      this.log.info("📋 System message is not an early warning - ignoring");
       return;
     }
 
-    this.log.debug("🟡 Early warning system message detected");
+    this.log.info("🟡 Early warning system message detected");
 
-    // Check if early warning alerts are enabled
+    // Check if early warning alerts are enabled and within time window
     if (!this.isAlertTypeActive(ALERT_TYPES.EARLY_WARNING)) {
-      this.log.debug("⏸️ Early warning alerts disabled");
+      this.log.info("⏸️ Early warning alerts disabled or outside time window");
       return;
     }
 
     // Extract citiesIds array
     const citiesIds = systemMessage.areasIds || systemMessage.citiesIds || [];
+    this.log.info(`🟡 Cities IDs from message: ${JSON.stringify(citiesIds)}`);
+
     if (!Array.isArray(citiesIds) || citiesIds.length === 0) {
       this.log.warn("⚠️ Early warning message missing citiesIds array");
       return;
@@ -652,15 +677,24 @@ class RedAlertPlugin {
     // Check if any of our configured cities are affected
     const affectedCities = this.selectedCities.filter((cityName) => {
       const cityId = this.cityNameToId.get(cityName);
+      this.log.info(
+        `🟡 Checking city "${cityName}" (ID: ${cityId}) against ${JSON.stringify(
+          citiesIds
+        )}`
+      );
       if (!cityId) {
         this.log.warn(`⚠️ City "${cityName}" not found in cities data`);
         return false;
       }
-      return citiesIds.includes(cityId);
+      const isAffected = citiesIds.includes(cityId);
+      this.log.info(`🟡 City "${cityName}" affected: ${isAffected}`);
+      return isAffected;
     });
 
+    this.log.info(`🟡 Affected cities: ${JSON.stringify(affectedCities)}`);
+
     if (affectedCities.length === 0) {
-      this.log.debug(`🟡 Early warning found but none for monitored cities`);
+      this.log.info(`🟡 Early warning found but none for monitored cities`);
       return;
     }
 
@@ -692,21 +726,21 @@ class RedAlertPlugin {
     this.triggerEarlyWarning(debouncedCities);
   }
 
-  // Exit notifications monitoring
-  setupExitNotificationsMonitoring() {
+  // OREF alerts monitoring (flash alerts and exit notifications)
+  setupOrefAlertsMonitoring() {
     this.log.info(
-      `🚪 Setting up exit notifications monitoring (${this.exitNotificationsPollInterval}ms interval)`
+      `🚪🔴 Setting up OREF alerts monitoring (${this.orefPollInterval}ms interval)`
     );
 
-    this.pollExitNotifications();
-    this.exitNotificationsTimer = setInterval(
-      () => this.pollExitNotifications(),
-      this.exitNotificationsPollInterval
+    this.pollOrefAlerts();
+    this.orefTimer = setInterval(
+      () => this.pollOrefAlerts(),
+      this.orefPollInterval
     );
   }
 
-  pollExitNotifications() {
-    this.log.debug("🚪 Polling OREF API for exit notifications...");
+  pollOrefAlerts() {
+    this.log.debug("🚪🔴 Polling OREF API for all alert types...");
 
     const options = {
       headers: {
@@ -721,22 +755,21 @@ class RedAlertPlugin {
       },
     };
 
-    const req = https.get(this.orefExitUrl, options, (res) => {
+    const req = https.get(this.orefUrl, options, (res) => {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
         if (res.statusCode !== 200) {
-          this.log.warn(`⚠️ OREF Exit API returned status: ${res.statusCode}`);
+          this.log.warn(`⚠️ OREF API returned status: ${res.statusCode}`);
           return;
         }
 
         try {
-          // Handle empty response
           const cleanedData = data.startsWith("\ufeff")
             ? data.substring(1)
             : data;
           if (cleanedData.trim() === "") {
-            this.log.debug("🚪 No active exit notifications");
+            this.log.debug("🚪🔴 No active OREF alerts");
             return;
           }
 
@@ -745,67 +778,176 @@ class RedAlertPlugin {
             ? parsedData
             : [parsedData];
 
-          this.log.debug(
-            `🚪 OREF Exit API returned ${alertsArray.length} notifications`
-          );
-          this.processExitNotifications(alertsArray);
+          this.log.info(`🚪🔴 OREF API returned ${alertsArray.length} alerts`);
+
+          // Log all categories to see what we're getting
+          const categories = [...new Set(alertsArray.map((a) => a.cat))];
+          this.log.info(`📋 OREF categories found: ${categories.join(", ")}`);
+
+          // Process different alert types
+          this.processOrefAlerts(alertsArray);
         } catch (err) {
-          this.log.error(
-            `❌ Error parsing exit notification data: ${err.message}`
-          );
+          this.log.error(`❌ Error parsing OREF alert data: ${err.message}`);
         }
       });
     });
 
     req.on("error", (error) =>
-      this.log.error(
-        `❌ Exit notifications polling request error: ${error.message}`
-      )
+      this.log.error(`❌ OREF polling request error: ${error.message}`)
     );
 
     req.setTimeout(10000, () => {
       req.destroy();
-      this.log.warn("⚠️ Exit notifications polling request timeout");
+      this.log.warn("⚠️ OREF polling request timeout");
     });
   }
 
-  processExitNotifications(notifications) {
+  processOrefAlerts(alerts) {
+    const now = Date.now();
+    const cutoffTime = now - 60000;
+
+    alerts.forEach((alert) => {
+      // Log each alert for debugging
+      this.log.debug(
+        `📋 OREF Alert - Cat: ${alert.cat}, Title: "${
+          alert.title
+        }", Data: ${JSON.stringify(alert.data)}`
+      );
+
+      // Process based on category
+      if (alert.cat === "10") {
+        // Exit notifications
+        this.processExitNotification(alert, now, cutoffTime);
+      } else if (alert.cat === "14") {
+        // Flash alerts
+        this.processFlashAlert(alert, now, cutoffTime);
+      } else {
+        // Log unknown categories
+        this.log.debug(
+          `❓ Unknown OREF category ${alert.cat}: "${alert.title}"`
+        );
+      }
+    });
+  }
+
+  processExitNotification(notification, now, cutoffTime) {
     if (!this.isAlertTypeActive(ALERT_TYPES.EXIT_NOTIFICATION)) {
-      this.log.debug("⏸️ Exit notifications disabled");
+      this.log.debug("⏸️ Exit notifications disabled or outside time window");
       return;
     }
 
-    const now = Date.now();
-    const cutoffTime = now - 60000; // Only process recent notifications
-
-    const validNotifications = notifications.filter((notification) => {
-      // Must be category 10 (exit notifications)
-      if (notification.cat !== "10") return false;
-
-      // Must match known exit titles
-      const isValidTitle = Object.values(EXIT_NOTIFICATION_TITLES).includes(
-        notification.title
+    // Must match known exit titles
+    const isValidTitle = Object.values(EXIT_NOTIFICATION_TITLES).includes(
+      notification.title
+    );
+    if (!isValidTitle) {
+      this.log.debug(
+        `🚪 Exit notification title not recognized: "${notification.title}"`
       );
-      if (!isValidTitle) return false;
+      return;
+    }
 
-      // Must be recent (within last minute)
-      const notificationTime = parseInt(notification.id) / 10000000; // Convert ID to timestamp
-      if (isNaN(notificationTime) || notificationTime < cutoffTime)
-        return false;
+    // Must be recent
+    const notificationTime = parseInt(notification.id) / 10000000;
+    if (isNaN(notificationTime) || notificationTime < cutoffTime) {
+      this.log.debug(`🚪 Exit notification too old: ${notificationTime}`);
+      return;
+    }
 
-      // Deduplication check (use timestamp + cities + title, not ID)
-      const dedupeKey = `${Math.floor(
-        notificationTime / 1000
-      )}_${notification.data.sort().join(",")}_${notification.title}`;
-      if (this.processedExitNotifications.has(dedupeKey)) return false;
+    // Deduplication
+    const dedupeKey = `${Math.floor(
+      notificationTime / 1000
+    )}_${notification.data.sort().join(",")}_${notification.title}`;
+    if (this.processedExitNotifications.has(dedupeKey)) return;
+    this.processedExitNotifications.add(dedupeKey);
 
-      this.processedExitNotifications.add(dedupeKey);
-      return true;
-    });
+    this.log.info(
+      `🚪 Processing exit notification: "${
+        notification.title
+      }" for ${notification.data.join(", ")}`
+    );
+    this.handleExitNotification(notification);
+  }
 
-    validNotifications.forEach((notification) => {
-      this.handleExitNotification(notification);
-    });
+  processFlashAlert(alert, now, cutoffTime) {
+    if (!this.isAlertTypeActive(ALERT_TYPES.FLASH_SHELTER)) {
+      this.log.debug("⏸️ Flash alerts disabled or outside time window");
+      return;
+    }
+
+    // Check if this is a valid flash alert title
+    const isValidTitle = FLASH_ALERT_TITLES.includes(alert.title);
+    if (!isValidTitle) {
+      this.log.debug(`🔴 Flash alert title not recognized: "${alert.title}"`);
+      return;
+    }
+
+    // Must be recent
+    const alertTime = parseInt(alert.id) / 10000000;
+    if (isNaN(alertTime) || alertTime < cutoffTime) {
+      this.log.debug(`🔴 Flash alert too old: ${alertTime}`);
+      return;
+    }
+
+    // Deduplication
+    const dedupeKey = `${Math.floor(alertTime / 1000)}_${JSON.stringify(
+      alert.data
+    )}_flash`;
+    if (this.processedFlashAlerts.has(dedupeKey)) return;
+    this.processedFlashAlerts.add(dedupeKey);
+
+    this.log.info(
+      `🔴 Processing flash alert: "${alert.title}" for ${JSON.stringify(
+        alert.data
+      )}`
+    );
+
+    // Check if city matches
+    const affectedCities = Array.isArray(alert.data)
+      ? alert.data.filter((city) => this.selectedCities.includes(city))
+      : this.selectedCities.includes(alert.data)
+      ? [alert.data]
+      : [];
+
+    // Special case for nationwide alerts
+    if (alert.data === "ברחבי הארץ" || alert.data === "כל אזורי ישראל") {
+      affectedCities.push(...this.selectedCities);
+    }
+
+    if (affectedCities.length === 0) {
+      this.log.debug(`🔴 Flash alert found but none for monitored cities`);
+      return;
+    }
+
+    // Apply debounce
+    const debouncedCities = affectedCities.filter((cityName) =>
+      this.canTriggerAlert(ALERT_TYPES.FLASH_SHELTER, cityName)
+    );
+
+    if (debouncedCities.length === 0) {
+      this.log.info(
+        `🔴 Flash alert found for ${affectedCities.join(
+          ", "
+        )} but all are in debounce period`
+      );
+      return;
+    }
+
+    // Check priority
+    if (this.isAlertActive) {
+      this.log.info(`🔴 Flash alert found but skipped (primary alert active)`);
+      return;
+    }
+
+    if (this.isEarlyWarningActive) {
+      this.log.info("🔴 Flash alert interrupting early warning");
+      this.stopEarlyWarningPlayback();
+    }
+
+    this.log.info(
+      `🔴 FLASH ALERT TRIGGERED for areas: ${debouncedCities.join(", ")}`
+    );
+    this.triggerFlashAlert(debouncedCities);
   }
 
   handleExitNotification(notification) {
@@ -1088,6 +1230,21 @@ class RedAlertPlugin {
         );
       }
 
+      // Clean up flash alerts
+      let flashRemoved = 0;
+      for (const id of this.processedFlashAlerts) {
+        const ts = parseInt(id.split("_")[0]);
+        if (isNaN(ts) || ts < cutoff) {
+          this.processedFlashAlerts.delete(id);
+          flashRemoved++;
+        }
+      }
+      if (flashRemoved) {
+        this.log.debug(
+          `🧹 Cleaned up ${flashRemoved} processed flash alert entries`
+        );
+      }
+
       // Clean up debounce entries older than 2 hours
       let debounceCleaned = 0;
       for (const [key, timestamp] of this.alertDebounce) {
@@ -1118,7 +1275,8 @@ class RedAlertPlugin {
   }
 
   /**
-   * Return true if alert type is enabled.
+   * Return true if alert type is enabled and within time window.
+   * PRIMARY ALERTS ARE NEVER TIME-RESTRICTED.
    */
   isAlertTypeActive(type) {
     const cfg = this.alertsConfig[type];
@@ -1126,6 +1284,44 @@ class RedAlertPlugin {
       this.log.debug(`⏸️ Alert type ${type} is disabled`);
       return false;
     }
+
+    // Primary alerts are never time-restricted
+    if (type === ALERT_TYPES.PRIMARY) {
+      return true;
+    }
+
+    // Check time restrictions if configured
+    if (typeof cfg.startHour === "number" && typeof cfg.endHour === "number") {
+      const now = new Date();
+      const israelTime = new Date(
+        now.toLocaleString("en-US", { timeZone: "Asia/Jerusalem" })
+      );
+      const currentHour = israelTime.getHours();
+
+      // Handle overnight ranges (e.g., 22-6)
+      let isInTimeWindow;
+      if (cfg.startHour <= cfg.endHour) {
+        // Same day range (e.g., 8-22)
+        isInTimeWindow =
+          currentHour >= cfg.startHour && currentHour <= cfg.endHour;
+      } else {
+        // Overnight range (e.g., 22-6)
+        isInTimeWindow =
+          currentHour >= cfg.startHour || currentHour <= cfg.endHour;
+      }
+
+      if (!isInTimeWindow) {
+        this.log.info(
+          `⏰ Alert type ${type} outside time window (${cfg.startHour}-${cfg.endHour}), current hour: ${currentHour} (Israel time)`
+        );
+        return false;
+      }
+
+      this.log.debug(
+        `⏰ Alert type ${type} within time window (${cfg.startHour}-${cfg.endHour}), current hour: ${currentHour} (Israel time)`
+      );
+    }
+
     return true;
   }
 
@@ -1273,7 +1469,7 @@ class RedAlertPlugin {
   }
 
   /**
-   * Chromecast playback with shelter instructions logic and comprehensive logging.
+   * Chromecast playback with event-based completion tracking and comprehensive logging.
    */
   playChromecastMedia(alertType, onAllComplete) {
     this.log.info(
@@ -1306,6 +1502,38 @@ class RedAlertPlugin {
         .map((d) => d.friendlyName)
         .join(", ")}`
     );
+
+    // Track completion for event-based callback
+    let devicesCompleted = 0;
+    const totalDevices = validDevices.length;
+    let callbackCalled = false;
+
+    const handleDeviceComplete = (deviceName) => {
+      devicesCompleted++;
+      this.log.info(
+        `✅ Device ${deviceName} completed (${devicesCompleted}/${totalDevices})`
+      );
+
+      if (devicesCompleted >= totalDevices && !callbackCalled) {
+        callbackCalled = true;
+        this.log.info(`✅ All devices completed playback for ${alertType}`);
+        if (onAllComplete) onAllComplete();
+      }
+    };
+
+    // Fallback timeout (longer than before since we're using events)
+    const timeoutMs = Math.max(this.chromecastTimeout * 2 * 1000, 60000); // At least 60 seconds
+    const timeoutHandle = setTimeout(() => {
+      if (!callbackCalled) {
+        callbackCalled = true;
+        this.log.warn(
+          `⏰ Timeout reached for ${alertType} after ${
+            timeoutMs / 1000
+          }s - forcing completion`
+        );
+        if (onAllComplete) onAllComplete();
+      }
+    }, timeoutMs);
 
     // Separate shelter and regular devices
     const shelterDevices = [];
@@ -1346,6 +1574,8 @@ class RedAlertPlugin {
             `🏠 [Shelter] Skipping ${alertType} on ${device.friendlyName} - cooldown active (${this.shelterInstructions.minIntervalMinutes} min)`
           );
           shouldPlay = false;
+          handleDeviceComplete(device.friendlyName); // Count as completed
+          return;
         } else {
           this.markShelterInstructionsPlayed(device.friendlyName, alertType);
           this.log.info(
@@ -1398,13 +1628,22 @@ class RedAlertPlugin {
             this.log.error(
               `❌ Unknown alert type for shelter device: ${alertType}`
             );
+            handleDeviceComplete(device.friendlyName);
             return;
         }
 
         this.log.info(
           `🏠 [Shelter] Playing ${alertType} on ${device.friendlyName} at ${volume}% volume`
         );
-        this.playWithRetry(device, mediaUrl, 3, alertType, volume, true);
+        this.playWithEventCompletion(
+          device,
+          mediaUrl,
+          3,
+          alertType,
+          volume,
+          true,
+          handleDeviceComplete
+        );
       }
     });
 
@@ -1444,6 +1683,10 @@ class RedAlertPlugin {
           this.log.error(
             `❌ Unknown alert type for regular devices: ${alertType}`
           );
+          // Mark all regular devices as completed
+          regularDevices.forEach((device) =>
+            handleDeviceComplete(device.friendlyName)
+          );
           return;
       }
 
@@ -1452,30 +1695,33 @@ class RedAlertPlugin {
         this.log.info(
           `📺 [Regular] Playing ${alertType} on ${device.friendlyName} at ${volume}% volume`
         );
-        this.playWithRetry(device, mediaUrl, 3, alertType, volume, false);
+        this.playWithEventCompletion(
+          device,
+          mediaUrl,
+          3,
+          alertType,
+          volume,
+          false,
+          handleDeviceComplete
+        );
       });
     }
 
-    // Simple timeout fallback like your original working code
-    const timeoutMs = this.chromecastTimeout * 1000;
     this.log.info(
-      `⏱️ Setting ${this.chromecastTimeout}s timeout for ${alertType} completion`
+      `⏱️ Event-based completion tracking enabled with ${
+        timeoutMs / 1000
+      }s timeout fallback`
     );
-    setTimeout(() => {
-      this.log.info(
-        `✅ Timeout reached for ${alertType} - calling completion callback`
-      );
-      if (onAllComplete) onAllComplete();
-    }, timeoutMs);
   }
 
-  playWithRetry(
+  playWithEventCompletion(
     device,
     mediaUrl,
     retries,
     alertType,
     volume,
-    isShelter = false
+    isShelter,
+    onComplete
   ) {
     const deviceType = isShelter ? "🏠 [Shelter]" : "📺 [Regular]";
 
@@ -1487,13 +1733,14 @@ class RedAlertPlugin {
           );
           setTimeout(
             () =>
-              this.playWithRetry(
+              this.playWithEventCompletion(
                 device,
                 mediaUrl,
                 retries - 1,
                 alertType,
                 volume,
-                isShelter
+                isShelter,
+                onComplete
               ),
             2000
           );
@@ -1501,10 +1748,13 @@ class RedAlertPlugin {
           this.log.error(
             `${deviceType} ❌ Final playback failure on ${device.friendlyName}: ${err.message}`
           );
+          onComplete(device.friendlyName);
         } else {
           this.log.info(
             `${deviceType} ▶️ Successfully started playback on ${device.friendlyName}`
           );
+
+          // Set volume
           device.setVolume(volume / 100, (volErr) => {
             if (volErr) {
               this.log.warn(
@@ -1516,26 +1766,48 @@ class RedAlertPlugin {
               );
             }
           });
+
+          // Listen for finished event
+          const finishedHandler = () => {
+            this.log.info(
+              `${deviceType} 🏁 Playback finished on ${device.friendlyName}`
+            );
+            device.removeListener("finished", finishedHandler);
+            onComplete(device.friendlyName);
+          };
+
+          device.on("finished", finishedHandler);
+
+          // Fallback timer per device (in case 'finished' event doesn't fire)
+          setTimeout(() => {
+            device.removeListener("finished", finishedHandler);
+            this.log.warn(
+              `${deviceType} ⏰ Device timeout on ${device.friendlyName}, marking as complete`
+            );
+            onComplete(device.friendlyName);
+          }, 90000); // 90 second per-device timeout
         }
       });
     } catch (error) {
-      // This catches the "Cannot read properties of null (reading 'destroy')" error
       this.log.error(
         `${deviceType} ❌ Connection error on ${device.friendlyName}: ${error.message}`
       );
       if (retries > 0) {
         setTimeout(
           () =>
-            this.playWithRetry(
+            this.playWithEventCompletion(
               device,
               mediaUrl,
               retries - 1,
               alertType,
               volume,
-              isShelter
+              isShelter,
+              onComplete
             ),
           2000
         );
+      } else {
+        onComplete(device.friendlyName);
       }
     }
   }
@@ -1794,8 +2066,8 @@ class RedAlertPlugin {
       this.tzofarClient.disconnect();
     }
 
-    if (this.exitNotificationsTimer) {
-      clearInterval(this.exitNotificationsTimer);
+    if (this.orefTimer) {
+      clearInterval(this.orefTimer);
     }
   }
 }
