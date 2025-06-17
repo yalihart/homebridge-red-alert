@@ -960,17 +960,52 @@ class RedAlertPlugin {
     isShelter = false
   ) {
     const deviceType = isShelter ? "🏠 [Shelter]" : "📺 [Regular]";
-    this.log.debug(
-      `${deviceType} Attempting playback on ${device.friendlyName} (${device.host})`
-    );
-    this.log.debug(`${deviceType} Media URL: ${mediaUrl}`);
-    this.log.debug(`${deviceType} Target volume: ${volume}%`);
 
-    device.play(mediaUrl, (err) => {
-      if (err && retries > 0) {
-        this.log.warn(
-          `${deviceType} ⚠️ Playback failed on ${device.friendlyName}, retrying (${retries} attempts left): ${err.message}`
-        );
+    try {
+      device.play(mediaUrl, (err) => {
+        if (err && retries > 0) {
+          this.log.warn(
+            `${deviceType} ⚠️ Playback failed on ${device.friendlyName}, retrying (${retries} attempts left): ${err.message}`
+          );
+          setTimeout(
+            () =>
+              this.playWithRetry(
+                device,
+                mediaUrl,
+                retries - 1,
+                alertType,
+                volume,
+                isShelter
+              ),
+            2000
+          );
+        } else if (err) {
+          this.log.error(
+            `${deviceType} ❌ Final playback failure on ${device.friendlyName}: ${err.message}`
+          );
+        } else {
+          this.log.info(
+            `${deviceType} ▶️ Successfully started playback on ${device.friendlyName}`
+          );
+          device.setVolume(volume / 100, (volErr) => {
+            if (volErr) {
+              this.log.warn(
+                `${deviceType} ⚠️ Failed to set volume on ${device.friendlyName}: ${volErr.message}`
+              );
+            } else {
+              this.log.info(
+                `${deviceType} 🔊 Volume set to ${volume}% on ${device.friendlyName}`
+              );
+            }
+          });
+        }
+      });
+    } catch (error) {
+      // This catches the "Cannot read properties of null (reading 'destroy')" error
+      this.log.error(
+        `${deviceType} ❌ Connection error on ${device.friendlyName}: ${error.message}`
+      );
+      if (retries > 0) {
         setTimeout(
           () =>
             this.playWithRetry(
@@ -983,31 +1018,8 @@ class RedAlertPlugin {
             ),
           2000
         );
-      } else if (err) {
-        this.log.error(
-          `${deviceType} ❌ Final playback failure on ${device.friendlyName}: ${err.message}`
-        );
-      } else {
-        this.log.info(
-          `${deviceType} ▶️ Successfully started playback on ${device.friendlyName}`
-        );
-        this.log.debug(
-          `${deviceType} Now setting volume to ${volume}% on ${device.friendlyName}`
-        );
-
-        device.setVolume(volume / 100, (volErr) => {
-          if (volErr) {
-            this.log.warn(
-              `${deviceType} ⚠️ Failed to set volume on ${device.friendlyName}: ${volErr.message}`
-            );
-          } else {
-            this.log.info(
-              `${deviceType} 🔊 Volume set to ${volume}% on ${device.friendlyName}`
-            );
-          }
-        });
       }
-    });
+    }
   }
 
   canPlayShelterInstructions(deviceName, alertType) {
