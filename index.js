@@ -902,20 +902,57 @@ class RedAlertPlugin {
       )}`
     );
 
-    // Check if city matches
-    const affectedCities = Array.isArray(alert.data)
-      ? alert.data.filter((city) => this.selectedCities.includes(city))
-      : this.selectedCities.includes(alert.data)
-      ? [alert.data]
-      : [];
+    // ✅ ENHANCED AREA FILTERING
+    let affectedCities = [];
 
-    // Special case for nationwide alerts
-    if (alert.data === "ברחבי הארץ" || alert.data === "כל אזורי ישראל") {
-      affectedCities.push(...this.selectedCities);
+    // Handle different data formats
+    if (Array.isArray(alert.data)) {
+      // Array of cities
+      affectedCities = alert.data.filter((city) =>
+        this.selectedCities.includes(city)
+      );
+      this.log.info(
+        `🔴 Flash alert data is array: ${JSON.stringify(alert.data)}`
+      );
+    } else if (typeof alert.data === "string") {
+      // Single city or special cases
+      const alertArea = alert.data;
+
+      // Check for nationwide alerts
+      if (
+        alertArea === "ברחבי הארץ" ||
+        alertArea === "כל אזורי ישראל" ||
+        alertArea === "כל האזורים" ||
+        alertArea === "מדינת ישראל"
+      ) {
+        this.log.info(`🔴 Nationwide flash alert detected: "${alertArea}"`);
+        affectedCities = [...this.selectedCities]; // All our cities
+      } else if (this.selectedCities.includes(alertArea)) {
+        // Specific city match
+        affectedCities = [alertArea];
+        this.log.info(`🔴 Flash alert for specific city: "${alertArea}"`);
+      } else {
+        this.log.info(`🔴 Flash alert for non-monitored area: "${alertArea}"`);
+      }
+    } else {
+      this.log.warn(
+        `🔴 Flash alert has unexpected data format: ${typeof alert.data} - ${JSON.stringify(
+          alert.data
+        )}`
+      );
+      return;
     }
 
+    this.log.info(
+      `🔴 Affected cities after filtering: ${JSON.stringify(affectedCities)}`
+    );
+
     if (affectedCities.length === 0) {
-      this.log.debug(`🔴 Flash alert found but none for monitored cities`);
+      this.log.info(
+        `🔴 Flash alert found but none for monitored cities (${this.selectedCities.join(
+          ", "
+        )})`
+      );
       return;
     }
 

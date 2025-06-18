@@ -22,7 +22,7 @@
             "volume": 55
         },
         "flash-shelter": {
-            "enabled": false,
+            "enabled": true,
             "startHour": 9,
             "endHour": 21,
             "volume": 60
