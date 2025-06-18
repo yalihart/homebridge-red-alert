@@ -651,13 +651,11 @@ class RedAlertPlugin {
     this.log.info(`🟡 Processing system message: ${systemMessage.titleHe}`);
     this.log.info(`🟡 Full system message: ${JSON.stringify(systemMessage)}`);
 
-    // Validate this is actually an early warning message
+    // Check if this is actually an early warning message
     if (!this.isEarlyWarningMessage(systemMessage)) {
       this.log.info("📋 System message is not an early warning - ignoring");
       return;
     }
-
-    this.log.info("🟡 Early warning system message detected");
 
     // Check if early warning alerts are enabled and within time window
     if (!this.isAlertTypeActive(ALERT_TYPES.EARLY_WARNING)) {
@@ -665,40 +663,50 @@ class RedAlertPlugin {
       return;
     }
 
-    // Extract citiesIds array
-    const citiesIds = systemMessage.areasIds || systemMessage.citiesIds || [];
-    this.log.info(`🟡 Cities IDs from message: ${JSON.stringify(citiesIds)}`);
+    // Use citiesIds ONLY for city matching, log both for debugging
+    const citiesIds = systemMessage.citiesIds || [];
+    const areasIds = systemMessage.areasIds || [];
 
     if (!Array.isArray(citiesIds) || citiesIds.length === 0) {
-      this.log.warn("⚠️ Early warning message missing citiesIds array");
+      this.log.warn(
+        "⚠️ Early warning message missing citiesIds array - cannot match cities"
+      );
       return;
     }
 
-    // Check if any of our configured cities are affected
+    // Match against citiesIds ONLY (not areasIds)
     const affectedCities = this.selectedCities.filter((cityName) => {
       const cityId = this.cityNameToId.get(cityName);
       this.log.info(
-        `🟡 Checking city "${cityName}" (ID: ${cityId}) against ${JSON.stringify(
+        `🟡 Checking city "${cityName}" (ID: ${cityId}) against cities: ${JSON.stringify(
           citiesIds
         )}`
       );
+
       if (!cityId) {
         this.log.warn(`⚠️ City "${cityName}" not found in cities data`);
         return false;
       }
+
       const isAffected = citiesIds.includes(cityId);
       this.log.info(`🟡 City "${cityName}" affected: ${isAffected}`);
       return isAffected;
     });
 
-    this.log.info(`🟡 Affected cities: ${JSON.stringify(affectedCities)}`);
+    this.log.info(
+      `🟡 Affected cities after filtering: ${JSON.stringify(affectedCities)}`
+    );
 
     if (affectedCities.length === 0) {
-      this.log.info(`🟡 Early warning found but none for monitored cities`);
+      this.log.info(
+        `🟡 Early warning found but none for monitored cities (${this.selectedCities.join(
+          ", "
+        )})`
+      );
       return;
     }
 
-    // Apply debounce for each affected city
+    // Apply debounce - check if we can trigger alerts for these cities
     const debouncedCities = affectedCities.filter((cityName) =>
       this.canTriggerAlert(ALERT_TYPES.EARLY_WARNING, cityName)
     );
@@ -712,12 +720,18 @@ class RedAlertPlugin {
       return;
     }
 
-    // Check if primary or flash alerts are active (they have higher priority)
-    if (this.isAlertActive || this.isFlashAlertActive) {
+    // Check if primary alert is active
+    if (this.isAlertActive) {
       this.log.info(
-        `🟡 Early warning found but skipped (higher priority alert active)`
+        `🟡 Early warning found but skipped (primary alert active)`
       );
       return;
+    }
+
+    // Stop any existing early warning
+    if (this.isEarlyWarningActive) {
+      this.log.info("🟡 New early warning interrupting existing early warning");
+      this.stopEarlyWarningPlayback();
     }
 
     this.log.info(
