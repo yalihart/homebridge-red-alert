@@ -1,15 +1,14 @@
 /**
- * Homebridge Red Alert Plugin with Tzofar WebSocket Integration
- * Monitors Israeli Home Front Command alerts via Tzofar WebSocket and provides HomeKit/Chromecast notifications
+ * Homebridge Red Alert Plugin with Full Tzofar WebSocket Integration
+ * Monitors Israeli Home Front Command alerts exclusively via Tzofar WebSocket
  *
  * Features:
- * - Tzofar WebSocket for real-time primary alerts and early warnings
- * - OREF polling for flash alerts and exit notifications
+ * - Tzofar WebSocket for ALL alert types (primary, early warnings, exit notifications)
  * - Per-alert-type enable/time/volume controls with time restrictions
  * - Per-device, per-alert-type volume
- * - City filtering with ID-based matching for early warnings
+ * - City filtering with ID-based matching
  * - 2-minute debounce for duplicate alerts
- * - Enhanced early warning validation with Hebrew keywords
+ * - Enhanced validation with Hebrew keywords
  * - Shelter instruction devices with cooldown periods
  * - Event-based Chromecast completion tracking
  *
@@ -22,7 +21,6 @@ const fs = require("fs-extra");
 const path = require("path");
 const express = require("express");
 const ChromecastAPI = require("chromecast-api");
-const https = require("https");
 const os = require("os");
 const crypto = require("crypto");
 
@@ -33,7 +31,6 @@ const ALERT_TYPES = {
   PRIMARY: "primary",
   TEST: "test",
   EARLY_WARNING: "early-warning",
-  FLASH_SHELTER: "flash-shelter",
   EXIT_NOTIFICATION: "exit-notification",
 };
 
@@ -67,27 +64,17 @@ const EARLY_WARNING_KEYWORDS = [
   "בעקבות זיהוי שיגורים",
 ];
 
-// Exit notification titles
-const EXIT_NOTIFICATION_TITLES = {
-  TERRORIST: "חדירת כלי טיס עוין - האירוע הסתיים",
-  MISSILE: "ירי רקטות וטילים -  האירוע הסתיים",
-};
-
-// Flash alert titles
-const FLASH_ALERT_TITLES = [
-  "שהייה בסמיכות למרחב מוגן",
-  "בדקות הקרובות צפויות להתקבל התרעות באזורך",
-  "היכנסו למרחב המוגן ושהו בו 10 דקות",
+// Exit notification validation keywords (Hebrew only)
+const EXIT_NOTIFICATION_KEYWORDS = [
+  "האירוע הסתיים",
+  "הסתיים באזורים",
+  "האירוע הסתיים באזורים",
 ];
 
 const DEFAULT_ALERTS_CONFIG = {
   [ALERT_TYPES.EARLY_WARNING]: {
     enabled: true,
     volume: 60,
-  },
-  [ALERT_TYPES.FLASH_SHELTER]: {
-    enabled: true,
-    volume: 50,
   },
   [ALERT_TYPES.EXIT_NOTIFICATION]: {
     enabled: true,
@@ -98,7 +85,6 @@ const DEFAULT_ALERTS_CONFIG = {
 const DEFAULT_MEDIA_PATHS = {
   alertVideoPath: "alert.mp4",
   earlyWarningVideoPath: "early.mp4",
-  flashAlertShelterVideoPath: "flash-shelter.mp4",
   exitNotificationVideoPath: "exit.mp4",
   testVideoPath: "test.mp4",
   ballisticClosureFile: "ballistic_closure.mp4",
@@ -196,7 +182,7 @@ class TzofarWebSocketClient {
         this.plugin.log.info(
           `🟡 Processing SYSTEM_MESSAGE: ${JSON.stringify(data.data)}`
         );
-        this.plugin.handleEarlyWarning(data.data);
+        this.plugin.handleSystemMessage(data.data);
       } else {
         this.plugin.log.info(
           `📋 Unknown Tzofar message type: ${
@@ -326,12 +312,6 @@ class RedAlertPlugin {
       pongTimeout: config.tzofar?.pongTimeout || 420000,
     };
 
-    // --- OREF polling configuration
-    this.orefPollInterval = config.orefPollInterval || 3000;
-    this.orefUrl =
-      config.orefUrl ||
-      "https://www.oref.org.il/warningMessages/alert/Alerts.json";
-
     // --- Cities data management
     this.citiesJsonPath =
       config.citiesJsonPath || path.join(__dirname, "cities.json");
@@ -356,7 +336,6 @@ class RedAlertPlugin {
       devices: [],
       primaryFile: "ballistic_closure.mp4",
       earlyWarningFile: "ballistic_windows_closed.mp4",
-      flashShelterFile: "ballistic_windows_closed.mp4",
       exitFile: "exit.mp4",
       minIntervalMinutes: 20,
     };
@@ -370,21 +349,14 @@ class RedAlertPlugin {
     // --- State for HomeKit
     this.isAlertActive = false;
     this.isEarlyWarningActive = false;
-    this.isFlashAlertActive = false;
     this.isExitNotificationActive = false;
     this.alertActiveCities = [];
     this.earlyWarningActiveCities = [];
-    this.flashAlertActiveCities = [];
     this.exitNotificationActiveCities = [];
     this.tzofarClient = null;
-    this.orefTimer = null;
     this.devices = [];
 
-    // Deduplication sets
-    this.processedExitNotifications = new Set();
-    this.processedFlashAlerts = new Set();
-
-    // --- HomeKit services
+    // --- HomeKit services (removed flash alert service)
     this.service = new Service.ContactSensor(this.name);
     this.testSwitchService = new Service.Switch(`${this.name} Test`, "test");
     this.testSwitchService
@@ -393,10 +365,6 @@ class RedAlertPlugin {
     this.earlyWarningService = new Service.ContactSensor(
       `${this.name} Early Warning`,
       "early-warning"
-    );
-    this.flashAlertService = new Service.ContactSensor(
-      `${this.name} Flash Alert`,
-      "flash-alert"
     );
     this.exitNotificationService = new Service.ContactSensor(
       `${this.name} Exit Notification`,
@@ -420,7 +388,6 @@ class RedAlertPlugin {
         if (this.useChromecast) this.setupChromecastDiscovery();
 
         this.setupTzofarWebSocket();
-        this.setupOrefAlertsMonitoring();
         this.setupCleanupTimer();
 
         this.log.info("✅ Red Alert plugin initialization complete");
@@ -566,10 +533,6 @@ class RedAlertPlugin {
       this.log.info("🟡 Stopping early warning for primary alert");
       this.stopEarlyWarningPlayback();
     }
-    if (this.isFlashAlertActive) {
-      this.log.info("🔴 Stopping flash alert for primary alert");
-      this.stopFlashAlertPlayback();
-    }
     if (this.isExitNotificationActive) {
       this.log.info("🟢 Stopping exit notification for primary alert");
       this.stopExitNotificationPlayback();
@@ -619,6 +582,28 @@ class RedAlertPlugin {
     }
   }
 
+  // ✅ NEW: Handle ALL system messages (early warnings + exit notifications)
+  handleSystemMessage(systemMessage) {
+    this.log.info(`📋 Processing system message: ${systemMessage.titleHe}`);
+    this.log.info(`📋 Full system message: ${JSON.stringify(systemMessage)}`);
+
+    // Check if this is an early warning message
+    if (this.isEarlyWarningMessage(systemMessage)) {
+      this.handleEarlyWarning(systemMessage);
+      return;
+    }
+
+    // Check if this is an exit notification message
+    if (this.isExitNotificationMessage(systemMessage)) {
+      this.handleExitNotification(systemMessage);
+      return;
+    }
+
+    this.log.info(
+      "📋 System message is neither early warning nor exit notification - ignoring"
+    );
+  }
+
   // Early warning validation
   isEarlyWarningMessage(systemMessage) {
     // Check title
@@ -628,7 +613,7 @@ class RedAlertPlugin {
     );
 
     if (!hasValidTitle) {
-      this.log.info(
+      this.log.debug(
         "📋 System message title doesn't match early warning pattern"
       );
       return false;
@@ -640,22 +625,42 @@ class RedAlertPlugin {
       bodyHe.includes(keyword)
     );
 
-    this.log.info(
+    this.log.debug(
       `🔍 Early warning validation - Title: ${hasValidTitle}, Content: ${hasValidContent}`
+    );
+    return hasValidContent;
+  }
+
+  // ✅ NEW: Exit notification validation
+  isExitNotificationMessage(systemMessage) {
+    // Check title
+    const expectedTitles = ["עדכון פיקוד העורף"];
+    const hasValidTitle = expectedTitles.some((title) =>
+      systemMessage.titleHe?.includes(title)
+    );
+
+    if (!hasValidTitle) {
+      this.log.debug(
+        "📋 System message title doesn't match exit notification pattern"
+      );
+      return false;
+    }
+
+    // Check content for exit notification keywords
+    const bodyHe = systemMessage.bodyHe || "";
+    const hasValidContent = EXIT_NOTIFICATION_KEYWORDS.some((keyword) =>
+      bodyHe.includes(keyword)
+    );
+
+    this.log.debug(
+      `🔍 Exit notification validation - Title: ${hasValidTitle}, Content: ${hasValidContent}`
     );
     return hasValidContent;
   }
 
   // Early warning handler (from Tzofar SYSTEM_MESSAGE)
   handleEarlyWarning(systemMessage) {
-    this.log.info(`🟡 Processing system message: ${systemMessage.titleHe}`);
-    this.log.info(`🟡 Full system message: ${JSON.stringify(systemMessage)}`);
-
-    // Check if this is actually an early warning message
-    if (!this.isEarlyWarningMessage(systemMessage)) {
-      this.log.info("📋 System message is not an early warning - ignoring");
-      return;
-    }
+    this.log.info(`🟡 Processing early warning: ${systemMessage.titleHe}`);
 
     // Check if early warning alerts are enabled and within time window
     if (!this.isAlertTypeActive(ALERT_TYPES.EARLY_WARNING)) {
@@ -663,9 +668,8 @@ class RedAlertPlugin {
       return;
     }
 
-    // Use citiesIds ONLY for city matching, log both for debugging
+    // Use citiesIds for city matching
     const citiesIds = systemMessage.citiesIds || [];
-    const areasIds = systemMessage.areasIds || [];
 
     if (!Array.isArray(citiesIds) || citiesIds.length === 0) {
       this.log.warn(
@@ -674,7 +678,7 @@ class RedAlertPlugin {
       return;
     }
 
-    // Match against citiesIds ONLY (not areasIds)
+    // Match against citiesIds
     const affectedCities = this.selectedCities.filter((cityName) => {
       const cityId = this.cityNameToId.get(cityName);
       this.log.info(
@@ -706,7 +710,7 @@ class RedAlertPlugin {
       return;
     }
 
-    // Apply debounce - check if we can trigger alerts for these cities
+    // Apply debounce
     const debouncedCities = affectedCities.filter((cityName) =>
       this.canTriggerAlert(ALERT_TYPES.EARLY_WARNING, cityName)
     );
@@ -740,230 +744,52 @@ class RedAlertPlugin {
     this.triggerEarlyWarning(debouncedCities);
   }
 
-  // OREF alerts monitoring (flash alerts and exit notifications)
-  setupOrefAlertsMonitoring() {
-    this.log.info(
-      `🚪🔴 Setting up OREF alerts monitoring (${this.orefPollInterval}ms interval)`
-    );
+  // ✅ NEW: Exit notification handler (from Tzofar SYSTEM_MESSAGE)
+  handleExitNotification(systemMessage) {
+    this.log.info(`🟢 Processing exit notification: ${systemMessage.titleHe}`);
 
-    this.pollOrefAlerts();
-    this.orefTimer = setInterval(
-      () => this.pollOrefAlerts(),
-      this.orefPollInterval
-    );
-  }
-
-  pollOrefAlerts() {
-    this.log.debug("🚪🔴 Polling OREF API for all alert types...");
-
-    const options = {
-      headers: {
-        "sec-ch-ua-platform": '"Android"',
-        Referer: "https://www.oref.org.il/eng/contact-page",
-        "User-Agent":
-          "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36",
-        Accept: "application/json, text/plain, */*",
-        "sec-ch-ua":
-          '"Brave";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
-        "sec-ch-ua-mobile": "?1",
-      },
-    };
-
-    const req = https.get(this.orefUrl, options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        if (res.statusCode !== 200) {
-          this.log.warn(`⚠️ OREF API returned status: ${res.statusCode}`);
-          return;
-        }
-
-        try {
-          const cleanedData = data.startsWith("\ufeff")
-            ? data.substring(1)
-            : data;
-          if (cleanedData.trim() === "") {
-            this.log.debug("🚪🔴 No active OREF alerts");
-            return;
-          }
-
-          const parsedData = JSON.parse(cleanedData);
-          const alertsArray = Array.isArray(parsedData)
-            ? parsedData
-            : [parsedData];
-
-          this.log.info(`🚪🔴 OREF API returned ${alertsArray.length} alerts`);
-
-          // Log all categories to see what we're getting
-          const categories = [...new Set(alertsArray.map((a) => a.cat))];
-          this.log.info(`📋 OREF categories found: ${categories.join(", ")}`);
-
-          // Process different alert types
-          this.processOrefAlerts(alertsArray);
-        } catch (err) {
-          this.log.error(`❌ Error parsing OREF alert data: ${err.message}`);
-        }
-      });
-    });
-
-    req.on("error", (error) =>
-      this.log.error(`❌ OREF polling request error: ${error.message}`)
-    );
-
-    req.setTimeout(10000, () => {
-      req.destroy();
-      this.log.warn("⚠️ OREF polling request timeout");
-    });
-  }
-
-  processOrefAlerts(alerts) {
-    const now = Date.now();
-    const cutoffTime = now - 60000;
-
-    alerts.forEach((alert) => {
-      // Log each alert for debugging
-      this.log.debug(
-        `📋 OREF Alert - Cat: ${alert.cat}, Title: "${
-          alert.title
-        }", Data: ${JSON.stringify(alert.data)}`
-      );
-
-      // Process based on category
-      if (alert.cat === "10") {
-        // Exit notifications
-        this.processExitNotification(alert, now, cutoffTime);
-      } else if (alert.cat === "14") {
-        // Flash alerts
-        this.processFlashAlert(alert, now, cutoffTime);
-      } else {
-        // Log unknown categories
-        this.log.debug(
-          `❓ Unknown OREF category ${alert.cat}: "${alert.title}"`
-        );
-      }
-    });
-  }
-
-  processExitNotification(notification, now, cutoffTime) {
+    // Check if exit notifications are enabled and within time window
     if (!this.isAlertTypeActive(ALERT_TYPES.EXIT_NOTIFICATION)) {
-      this.log.debug("⏸️ Exit notifications disabled or outside time window");
+      this.log.info("⏸️ Exit notifications disabled or outside time window");
       return;
     }
 
-    // Must match known exit titles
-    const isValidTitle = Object.values(EXIT_NOTIFICATION_TITLES).includes(
-      notification.title
-    );
-    if (!isValidTitle) {
-      this.log.debug(
-        `🚪 Exit notification title not recognized: "${notification.title}"`
-      );
-      return;
-    }
+    // Use citiesIds for city matching
+    const citiesIds = systemMessage.citiesIds || [];
 
-    // Must be recent
-    const notificationTime = parseInt(notification.id) / 10000000;
-    if (isNaN(notificationTime) || notificationTime < cutoffTime) {
-      this.log.debug(`🚪 Exit notification too old: ${notificationTime}`);
-      return;
-    }
-
-    // Deduplication
-    const dedupeKey = `${Math.floor(
-      notificationTime / 1000
-    )}_${notification.data.sort().join(",")}_${notification.title}`;
-    if (this.processedExitNotifications.has(dedupeKey)) return;
-    this.processedExitNotifications.add(dedupeKey);
-
-    this.log.info(
-      `🚪 Processing exit notification: "${
-        notification.title
-      }" for ${notification.data.join(", ")}`
-    );
-    this.handleExitNotification(notification);
-  }
-
-  processFlashAlert(alert, now, cutoffTime) {
-    if (!this.isAlertTypeActive(ALERT_TYPES.FLASH_SHELTER)) {
-      this.log.debug("⏸️ Flash alerts disabled or outside time window");
-      return;
-    }
-
-    // Check if this is a valid flash alert title
-    const isValidTitle = FLASH_ALERT_TITLES.includes(alert.title);
-    if (!isValidTitle) {
-      this.log.debug(`🔴 Flash alert title not recognized: "${alert.title}"`);
-      return;
-    }
-
-    // Must be recent
-    const alertTime = parseInt(alert.id) / 10000000;
-    if (isNaN(alertTime) || alertTime < cutoffTime) {
-      this.log.debug(`🔴 Flash alert too old: ${alertTime}`);
-      return;
-    }
-
-    // Deduplication
-    const dedupeKey = `${Math.floor(alertTime / 1000)}_${JSON.stringify(
-      alert.data
-    )}_flash`;
-    if (this.processedFlashAlerts.has(dedupeKey)) return;
-    this.processedFlashAlerts.add(dedupeKey);
-
-    this.log.info(
-      `🔴 Processing flash alert: "${alert.title}" for ${JSON.stringify(
-        alert.data
-      )}`
-    );
-
-    // ✅ ENHANCED AREA FILTERING
-    let affectedCities = [];
-
-    // Handle different data formats
-    if (Array.isArray(alert.data)) {
-      // Array of cities
-      affectedCities = alert.data.filter((city) =>
-        this.selectedCities.includes(city)
-      );
-      this.log.info(
-        `🔴 Flash alert data is array: ${JSON.stringify(alert.data)}`
-      );
-    } else if (typeof alert.data === "string") {
-      // Single city or special cases
-      const alertArea = alert.data;
-
-      // Check for nationwide alerts
-      if (
-        alertArea === "ברחבי הארץ" ||
-        alertArea === "כל אזורי ישראל" ||
-        alertArea === "כל האזורים" ||
-        alertArea === "מדינת ישראל"
-      ) {
-        this.log.info(`🔴 Nationwide flash alert detected: "${alertArea}"`);
-        affectedCities = [...this.selectedCities]; // All our cities
-      } else if (this.selectedCities.includes(alertArea)) {
-        // Specific city match
-        affectedCities = [alertArea];
-        this.log.info(`🔴 Flash alert for specific city: "${alertArea}"`);
-      } else {
-        this.log.info(`🔴 Flash alert for non-monitored area: "${alertArea}"`);
-      }
-    } else {
+    if (!Array.isArray(citiesIds) || citiesIds.length === 0) {
       this.log.warn(
-        `🔴 Flash alert has unexpected data format: ${typeof alert.data} - ${JSON.stringify(
-          alert.data
+        "⚠️ Exit notification message missing citiesIds array - cannot match cities"
+      );
+      return;
+    }
+
+    // Match against citiesIds
+    const affectedCities = this.selectedCities.filter((cityName) => {
+      const cityId = this.cityNameToId.get(cityName);
+      this.log.info(
+        `🟢 Checking city "${cityName}" (ID: ${cityId}) against cities: ${JSON.stringify(
+          citiesIds
         )}`
       );
-      return;
-    }
+
+      if (!cityId) {
+        this.log.warn(`⚠️ City "${cityName}" not found in cities data`);
+        return false;
+      }
+
+      const isAffected = citiesIds.includes(cityId);
+      this.log.info(`🟢 City "${cityName}" affected: ${isAffected}`);
+      return isAffected;
+    });
 
     this.log.info(
-      `🔴 Affected cities after filtering: ${JSON.stringify(affectedCities)}`
+      `🟢 Affected cities after filtering: ${JSON.stringify(affectedCities)}`
     );
 
     if (affectedCities.length === 0) {
       this.log.info(
-        `🔴 Flash alert found but none for monitored cities (${this.selectedCities.join(
+        `🟢 Exit notification found but none for monitored cities (${this.selectedCities.join(
           ", "
         )})`
       );
@@ -972,123 +798,30 @@ class RedAlertPlugin {
 
     // Apply debounce
     const debouncedCities = affectedCities.filter((cityName) =>
-      this.canTriggerAlert(ALERT_TYPES.FLASH_SHELTER, cityName)
-    );
-
-    if (debouncedCities.length === 0) {
-      this.log.info(
-        `🔴 Flash alert found for ${affectedCities.join(
-          ", "
-        )} but all are in debounce period`
-      );
-      return;
-    }
-
-    // Check priority
-    if (this.isAlertActive) {
-      this.log.info(`🔴 Flash alert found but skipped (primary alert active)`);
-      return;
-    }
-
-    if (this.isEarlyWarningActive) {
-      this.log.info("🔴 Flash alert interrupting early warning");
-      this.stopEarlyWarningPlayback();
-    }
-
-    this.log.info(
-      `🔴 FLASH ALERT TRIGGERED for areas: ${debouncedCities.join(", ")}`
-    );
-    this.triggerFlashAlert(debouncedCities);
-  }
-
-  handleExitNotification(notification) {
-    if (!Array.isArray(notification.data)) {
-      this.log.warn("⚠️ Exit notification missing data array");
-      return;
-    }
-
-    // Check if any of our configured cities are affected
-    const affectedCities = notification.data.filter((city) =>
-      this.selectedCities.includes(city)
-    );
-
-    if (affectedCities.length === 0) {
-      this.log.debug(
-        `🚪 Exit notification found but none for monitored cities`
-      );
-      return;
-    }
-
-    // Check if this exit notification matches the last alert type for each city
-    const relevantCities = affectedCities.filter((city) => {
-      const lastAlert = this.lastAlertTypePerCity.get(city);
-      if (!lastAlert) {
-        this.log.debug(`🚪 No previous alert recorded for ${city}`);
-        return false;
-      }
-
-      // Check if exit message matches the last alert type
-      const isMatchingExit = this.doesExitMessageMatchLastAlert(
-        notification.title,
-        lastAlert.alertType
-      );
-      if (isMatchingExit) {
-        this.log.debug(
-          `🚪 Exit notification matches last alert type for ${city}`
-        );
-        // Clear the last alert record since it's now ended
-        this.lastAlertTypePerCity.delete(city);
-        return true;
-      }
-
-      return false;
-    });
-
-    if (relevantCities.length === 0) {
-      this.log.debug(
-        `🚪 Exit notification found but doesn't match last alert types`
-      );
-      return;
-    }
-
-    // Apply debounce
-    const debouncedCities = relevantCities.filter((cityName) =>
       this.canTriggerAlert(ALERT_TYPES.EXIT_NOTIFICATION, cityName)
     );
 
     if (debouncedCities.length === 0) {
       this.log.info(
-        `🚪 Exit notification found for ${relevantCities.join(
+        `🟢 Exit notification found for ${affectedCities.join(
           ", "
         )} but all are in debounce period`
       );
       return;
     }
 
+    // Primary alerts take priority over exit notifications
+    if (this.isAlertActive) {
+      this.log.info(
+        `🟢 Exit notification found but skipped (primary alert active)`
+      );
+      return;
+    }
+
     this.log.info(
-      `🚪 EXIT NOTIFICATION TRIGGERED for areas: ${debouncedCities.join(", ")}`
+      `🟢 EXIT NOTIFICATION TRIGGERED for areas: ${debouncedCities.join(", ")}`
     );
     this.triggerExitNotification(debouncedCities);
-  }
-
-  doesExitMessageMatchLastAlert(exitTitle, lastAlertType) {
-    // Terrorist infiltration (threat ID 2) -> terrorist exit message
-    if (
-      lastAlertType === 2 &&
-      exitTitle === EXIT_NOTIFICATION_TITLES.TERRORIST
-    ) {
-      return true;
-    }
-
-    // Missile-related alerts (threat IDs 0, 5, 7) -> missile exit message
-    if (
-      [0, 5, 7].includes(lastAlertType) &&
-      exitTitle === EXIT_NOTIFICATION_TITLES.MISSILE
-    ) {
-      return true;
-    }
-
-    return false;
   }
 
   /**
@@ -1099,7 +832,6 @@ class RedAlertPlugin {
     const result = {};
     for (const type of [
       ALERT_TYPES.EARLY_WARNING,
-      ALERT_TYPES.FLASH_SHELTER,
       ALERT_TYPES.EXIT_NOTIFICATION,
     ]) {
       result[type] = Object.assign(
@@ -1129,7 +861,6 @@ class RedAlertPlugin {
       if (typeof dev.alerts === "object" && dev.alerts !== null) {
         for (const type of [
           ALERT_TYPES.EARLY_WARNING,
-          ALERT_TYPES.FLASH_SHELTER,
           ALERT_TYPES.EXIT_NOTIFICATION,
         ]) {
           if (dev.alerts[type] && typeof dev.alerts[type].volume === "number") {
@@ -1151,7 +882,7 @@ class RedAlertPlugin {
     const informationService = new Service.AccessoryInformation()
       .setCharacteristic(Characteristic.Manufacturer, "Homebridge")
       .setCharacteristic(Characteristic.Model, "Red Alert Tzofar")
-      .setCharacteristic(Characteristic.SerialNumber, "3.0.0");
+      .setCharacteristic(Characteristic.SerialNumber, "4.0.0");
 
     this.service
       .getCharacteristic(Characteristic.ContactSensorState)
@@ -1159,9 +890,6 @@ class RedAlertPlugin {
     this.earlyWarningService
       .getCharacteristic(Characteristic.ContactSensorState)
       .on("get", this.getEarlyWarningState.bind(this));
-    this.flashAlertService
-      .getCharacteristic(Characteristic.ContactSensorState)
-      .on("get", this.getFlashAlertState.bind(this));
     this.exitNotificationService
       .getCharacteristic(Characteristic.ContactSensorState)
       .on("get", this.getExitNotificationState.bind(this));
@@ -1171,7 +899,6 @@ class RedAlertPlugin {
       this.service,
       this.testSwitchService,
       this.earlyWarningService,
-      this.flashAlertService,
       this.exitNotificationService,
     ];
   }
@@ -1189,15 +916,6 @@ class RedAlertPlugin {
     callback(
       null,
       this.isEarlyWarningActive
-        ? Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
-        : Characteristic.ContactSensorState.CONTACT_DETECTED
-    );
-  }
-
-  getFlashAlertState(callback) {
-    callback(
-      null,
-      this.isFlashAlertActive
         ? Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
         : Characteristic.ContactSensorState.CONTACT_DETECTED
     );
@@ -1265,36 +983,6 @@ class RedAlertPlugin {
     this.log.info("🧹 Setting up cleanup timer (hourly)");
     setInterval(() => {
       const cutoff = Date.now() - 2 * 60 * 60 * 1000;
-
-      // Clean up exit notifications
-      let removed = 0;
-      for (const id of this.processedExitNotifications) {
-        const ts = parseInt(id.split("_")[0]);
-        if (isNaN(ts) || ts < cutoff) {
-          this.processedExitNotifications.delete(id);
-          removed++;
-        }
-      }
-      if (removed) {
-        this.log.debug(
-          `🧹 Cleaned up ${removed} processed exit notification entries`
-        );
-      }
-
-      // Clean up flash alerts
-      let flashRemoved = 0;
-      for (const id of this.processedFlashAlerts) {
-        const ts = parseInt(id.split("_")[0]);
-        if (isNaN(ts) || ts < cutoff) {
-          this.processedFlashAlerts.delete(id);
-          flashRemoved++;
-        }
-      }
-      if (flashRemoved) {
-        this.log.debug(
-          `🧹 Cleaned up ${flashRemoved} processed flash alert entries`
-        );
-      }
 
       // Clean up debounce entries older than 2 hours
       let debounceCleaned = 0;
@@ -1405,35 +1093,6 @@ class RedAlertPlugin {
     }
   }
 
-  triggerFlashAlert(cities) {
-    this.log.info(`🔴 FLASH/SHELTER ALERT TRIGGERED`);
-    this.log.info(`📍 Cities: ${cities.join(", ")}`);
-    this.log.info(
-      `⏰ Time: ${new Date().toLocaleString("en-US", {
-        timeZone: "Asia/Jerusalem",
-      })} (Israel time)`
-    );
-
-    this.isFlashAlertActive = true;
-    this.flashAlertActiveCities = cities;
-    this.flashAlertService.updateCharacteristic(
-      Characteristic.ContactSensorState,
-      Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
-    );
-
-    if (this.useChromecast) {
-      this.playChromecastMedia(ALERT_TYPES.FLASH_SHELTER, () => {
-        this.log.info(`✅ Flash alert playback completed, resetting state`);
-        this.resetFlashAlert();
-      });
-    } else {
-      this.log.info(
-        `⏱️ Chromecast disabled, using ${this.chromecastTimeout}s timeout`
-      );
-      setTimeout(() => this.resetFlashAlert(), this.chromecastTimeout * 1000);
-    }
-  }
-
   triggerExitNotification(cities) {
     this.log.info(`🟢 EXIT NOTIFICATION TRIGGERED`);
     this.log.info(`📍 Cities: ${cities.join(", ")}`);
@@ -1473,11 +1132,6 @@ class RedAlertPlugin {
     this.resetEarlyWarning();
   }
 
-  stopFlashAlertPlayback() {
-    this.log.info("🛑 Stopping flash alert playback");
-    this.resetFlashAlert();
-  }
-
   stopExitNotificationPlayback() {
     this.log.info("🛑 Stopping exit notification playback");
     this.resetExitNotification();
@@ -1489,18 +1143,6 @@ class RedAlertPlugin {
       this.isEarlyWarningActive = false;
       this.earlyWarningActiveCities = [];
       this.earlyWarningService.updateCharacteristic(
-        Characteristic.ContactSensorState,
-        Characteristic.ContactSensorState.CONTACT_DETECTED
-      );
-    }
-  }
-
-  resetFlashAlert() {
-    if (this.isFlashAlertActive) {
-      this.log.info("🔄 Resetting flash alert state");
-      this.isFlashAlertActive = false;
-      this.flashAlertActiveCities = [];
-      this.flashAlertService.updateCharacteristic(
         Characteristic.ContactSensorState,
         Characteristic.ContactSensorState.CONTACT_DETECTED
       );
@@ -1572,8 +1214,8 @@ class RedAlertPlugin {
       }
     };
 
-    // Fallback timeout (longer than before since we're using events)
-    const timeoutMs = Math.max(this.chromecastTimeout * 2 * 1000, 60000); // At least 60 seconds
+    // Fallback timeout
+    const timeoutMs = Math.max(this.chromecastTimeout * 2 * 1000, 60000);
     const timeoutHandle = setTimeout(() => {
       if (!callbackCalled) {
         callbackCalled = true;
@@ -1615,17 +1257,14 @@ class RedAlertPlugin {
         volume,
         shouldPlay = true;
 
-      // Check cooldown for certain alert types
-      if (
-        alertType === ALERT_TYPES.EARLY_WARNING ||
-        alertType === ALERT_TYPES.FLASH_SHELTER
-      ) {
+      // Check cooldown for early warnings only (exit notifications don't have cooldown)
+      if (alertType === ALERT_TYPES.EARLY_WARNING) {
         if (!this.canPlayShelterInstructions(device.friendlyName, alertType)) {
           this.log.info(
             `🏠 [Shelter] Skipping ${alertType} on ${device.friendlyName} - cooldown active (${this.shelterInstructions.minIntervalMinutes} min)`
           );
           shouldPlay = false;
-          handleDeviceComplete(device.friendlyName); // Count as completed
+          handleDeviceComplete(device.friendlyName);
           return;
         } else {
           this.markShelterInstructionsPlayed(device.friendlyName, alertType);
@@ -1650,13 +1289,6 @@ class RedAlertPlugin {
             volume = config.volumes?.["early-warning"] || 60;
             this.log.info(
               `🏠 [Shelter] EARLY WARNING - playing windows closed instructions on ${device.friendlyName}`
-            );
-            break;
-          case ALERT_TYPES.FLASH_SHELTER:
-            mediaUrl = `${this.baseUrl}/shelter-instructions-flash-shelter`;
-            volume = config.volumes?.["flash-shelter"] || 60;
-            this.log.info(
-              `🏠 [Shelter] FLASH SHELTER - playing windows closed instructions on ${device.friendlyName}`
             );
             break;
           case ALERT_TYPES.EXIT_NOTIFICATION:
@@ -1718,12 +1350,6 @@ class RedAlertPlugin {
             `📺 [Regular] EARLY WARNING - playing early warning video`
           );
           break;
-        case ALERT_TYPES.FLASH_SHELTER:
-          mediaUrl = `${this.baseUrl}/flash-shelter-video`;
-          this.log.info(
-            `📺 [Regular] FLASH SHELTER - playing flash shelter video`
-          );
-          break;
         case ALERT_TYPES.EXIT_NOTIFICATION:
           mediaUrl = `${this.baseUrl}/exit-notification-video`;
           this.log.info(
@@ -1734,7 +1360,6 @@ class RedAlertPlugin {
           this.log.error(
             `❌ Unknown alert type for regular devices: ${alertType}`
           );
-          // Mark all regular devices as completed
           regularDevices.forEach((device) =>
             handleDeviceComplete(device.friendlyName)
           );
@@ -1829,14 +1454,14 @@ class RedAlertPlugin {
 
           device.on("finished", finishedHandler);
 
-          // Fallback timer per device (in case 'finished' event doesn't fire)
+          // Fallback timer per device
           setTimeout(() => {
             device.removeListener("finished", finishedHandler);
             this.log.warn(
               `${deviceType} ⏰ Device timeout on ${device.friendlyName}, marking as complete`
             );
             onComplete(device.friendlyName);
-          }, 90000); // 90 second per-device timeout
+          }, 90000);
         }
       });
     } catch (error) {
@@ -1947,7 +1572,7 @@ class RedAlertPlugin {
       device && device.friendlyName ? device.friendlyName.toLowerCase() : "";
     const devOverride = this.deviceOverrides[devName];
 
-    let volume = this.chromecastVolume; // default
+    let volume = this.chromecastVolume;
     let source = "default";
 
     if (
@@ -1997,10 +1622,6 @@ class RedAlertPlugin {
         this.log.debug("📹 Serving early warning video");
         res.sendFile(path.join(mediaDir, this.earlyWarningVideoPath));
       });
-      this.server.get("/flash-shelter-video", (req, res) => {
-        this.log.debug("📹 Serving flash shelter video");
-        res.sendFile(path.join(mediaDir, this.flashAlertShelterVideoPath));
-      });
       this.server.get("/exit-notification-video", (req, res) => {
         this.log.debug("📹 Serving exit notification video");
         res.sendFile(path.join(mediaDir, this.exitNotificationVideoPath));
@@ -2020,28 +1641,6 @@ class RedAlertPlugin {
       });
       this.server.get("/shelter-instructions-early-warning", (req, res) => {
         this.log.debug("🏠 Serving early warning shelter instructions");
-        res.sendFile(
-          path.join(
-            mediaDir,
-            this.shelterInstructions.earlyWarningFile ||
-              this.windowsClosedFile ||
-              "ballistic_windows_closed.mp4"
-          )
-        );
-      });
-      this.server.get("/shelter-instructions-flash-shelter", (req, res) => {
-        this.log.debug("🏠 Serving flash shelter instructions");
-        res.sendFile(
-          path.join(
-            mediaDir,
-            this.shelterInstructions.flashShelterFile ||
-              this.windowsClosedFile ||
-              "ballistic_windows_closed.mp4"
-          )
-        );
-      });
-      this.server.get("/shelter-instructions-exit-notification", (req, res) => {
-        this.log.debug("🏠 Serving exit notification shelter instructions");
         res.sendFile(
           path.join(
             mediaDir,
@@ -2115,10 +1714,6 @@ class RedAlertPlugin {
 
     if (this.tzofarClient) {
       this.tzofarClient.disconnect();
-    }
-
-    if (this.orefTimer) {
-      clearInterval(this.orefTimer);
     }
   }
 }

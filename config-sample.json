@@ -1,125 +1,154 @@
 {
-    "accessory": "RedAlert",
-    "name": "Red Alert",
-    "cities": [
-        "רעננה"
-    ],
-    "citiesJsonPath": "cities.json",
-    "useChromecast": true,
-    "chromecastVolume": 80,
-    "chromecastTimeout": 30,
-    "serverPort": 8095,
-    "alertVideoPath": "alert.mp4",
-    "earlyWarningVideoPath": "early.mp4",
-    "flashAlertShelterVideoPath": "flash-shelter.mp4",
-    "exitNotificationVideoPath": "exit.mp4",
-    "testVideoPath": "test.mp4",
-    "orefPollInterval": 3000,
-    "orefUrl": "https://www.oref.org.il/warningMessages/alert/Alerts.json",
-    "alerts": {
-        "early-warning": {
-            "enabled": true,
-            "volume": 55
-        },
-        "flash-shelter": {
-            "enabled": true,
-            "startHour": 9,
-            "endHour": 21,
-            "volume": 60
-        },
-        "exit-notification": {
-            "enabled": true,
-            "volume": 40
-        }
+    "bridge": {
+        "name": "Homebridge",
+        "username": "CC:22:3D:E3:CE:30",
+        "port": 51826,
+        "pin": "031-45-154"
     },
-    "chromecastVolumes": [
+    "accessories": [
         {
-            "deviceName": "Yali's TV",
-            "volume": 40,
-            "alerts": {
-                "early-warning": {
-                    "volume": 20
-                },
-                "flash-shelter": {
-                    "volume": 15
-                },
-                "exit-notification": {
-                    "volume": 15
-                }
-            }
-        },
-        {
-            "deviceName": "Bedroom TV",
-            "volume": 40,
-            "alerts": {
-                "early-warning": {
-                    "volume": 20
-                },
-                "flash-shelter": {
-                    "volume": 15
-                },
-                "exit-notification": {
-                    "volume": 15
-                }
-            }
-        },
-        {
-            "deviceName": "noa tv",
-            "volume": 40,
-            "alerts": {
-                "early-warning": {
-                    "volume": 20
-                },
-                "flash-shelter": {
-                    "volume": 15
-                },
-                "exit-notification": {
-                    "volume": 15
-                }
-            }
-        },
-        {
-            "deviceName": "tal bedroom tv",
-            "volume": 40,
-            "alerts": {
-                "early-warning": {
-                    "volume": 20
-                },
-                "flash-shelter": {
-                    "volume": 15
-                },
-                "exit-notification": {
-                    "volume": 15
-                }
-            }
-        }
-    ],
-    "shelterInstructions": {
-        "primaryFile": "ballistic_closure.mp4",
-        "earlyWarningFile": "ballistic_windows_closed.mp4",
-        "flashShelterFile": "ballistic_windows_closed.mp4",
-        "exitFile": "exit.mp4",
-        "minIntervalMinutes": 20,
-        "devices": [
-            {
-                "deviceName": "Shelter speaker",
+            "accessory": "RedAlert",
+            "name": "Red Alert System",
+            "// --- BASIC CONFIGURATION ---": "",
+            "cities": [
+                "רעננה",
+                "תל אביב",
+                "ירושלים"
+            ],
+            "useChromecast": true,
+            "chromecastVolume": 80,
+            "chromecastTimeout": 45,
+            "serverPort": 8095,
+            "baseUrl": "http://192.168.1.100:8095",
+            "// --- TZOFAR WEBSOCKET SETTINGS ---": "",
+            "tzofar": {
                 "enabled": true,
-                "volumes": {
-                    "primary": 65,
-                    "early-warning": 65,
-                    "flash-shelter": 40,
-                    "exit-notification": 60
+                "wsUrl": "wss://ws.tzevaadom.co.il/socket?platform=ANDROID",
+                "reconnectInterval": 10000,
+                "maxReconnectInterval": 60000,
+                "maxReconnectAttempts": 10,
+                "pingInterval": 60000,
+                "pongTimeout": 420000
+            },
+            "// --- CITIES DATA FILE ---": "",
+            "citiesJsonPath": "/homebridge/cities.json",
+            "// --- PER-ALERT-TYPE CONFIGURATION ---": "",
+            "alerts": {
+                "early-warning": {
+                    "enabled": true,
+                    "volume": 65,
+                    "startHour": 7,
+                    "endHour": 23,
+                    "_comment": "Early warnings 7 AM to 11 PM only"
+                },
+                "exit-notification": {
+                    "enabled": true,
+                    "volume": 40,
+                    "_comment": "Exit notifications 24/7 - no time restrictions"
                 }
-            }
-        ]
-    },
-    "tzofar": {
-        "enabled": true,
-        "wsUrl": "wss://ws.tzevaadom.co.il/socket?platform=ANDROID",
-        "reconnectInterval": 10000,
-        "maxReconnectInterval": 60000,
-        "maxReconnectAttempts": 10,
-        "pingInterval": 60000,
-        "pongTimeout": 420000
-    }
+            },
+            "// --- PER-DEVICE VOLUME OVERRIDES ---": "",
+            "chromecastVolumes": [
+                {
+                    "deviceName": "Living Room TV",
+                    "volume": 30,
+                    "alerts": {
+                        "early-warning": {
+                            "volume": 20,
+                            "_comment": "Quieter early warnings in living room"
+                        },
+                        "exit-notification": {
+                            "volume": 15,
+                            "_comment": "Very quiet exit notifications"
+                        }
+                    }
+                },
+                {
+                    "deviceName": "Bedroom TV",
+                    "volume": 25,
+                    "alerts": {
+                        "early-warning": {
+                            "volume": 15,
+                            "_comment": "Very quiet for bedroom"
+                        },
+                        "exit-notification": {
+                            "volume": 10,
+                            "_comment": "Barely audible exit notifications"
+                        }
+                    }
+                },
+                {
+                    "deviceName": "Kitchen Display",
+                    "volume": 70,
+                    "alerts": {
+                        "early-warning": {
+                            "volume": 80,
+                            "_comment": "Louder in kitchen due to ambient noise"
+                        },
+                        "exit-notification": {
+                            "volume": 60,
+                            "_comment": "Clear but not overwhelming"
+                        }
+                    }
+                },
+                {
+                    "deviceName": "Shelter Speaker",
+                    "volume": 85,
+                    "alerts": {
+                        "early-warning": {
+                            "volume": 90,
+                            "_comment": "Critical alerts must be heard clearly"
+                        },
+                        "exit-notification": {
+                            "volume": 75,
+                            "_comment": "Important but less urgent"
+                        }
+                    }
+                }
+            ],
+            "// --- SHELTER INSTRUCTIONS CONFIGURATION ---": "",
+            "shelterInstructions": {
+                "devices": [
+                    {
+                        "deviceName": "Shelter Speaker",
+                        "enabled": true,
+                        "volumes": {
+                            "primary": 95,
+                            "early-warning": 85,
+                            "exit-notification": 70,
+                            "_comment": "Different volumes for each alert type"
+                        }
+                    },
+                    {
+                        "deviceName": "Safe Room Display",
+                        "enabled": true,
+                        "volumes": {
+                            "primary": 80,
+                            "early-warning": 70,
+                            "exit-notification": 60
+                        }
+                    }
+                ],
+                "primaryFile": "ballistic_closure.mp4",
+                "earlyWarningFile": "ballistic_windows_closed.mp4",
+                "exitFile": "exit_all_clear.mp4",
+                "minIntervalMinutes": 20,
+                "_comment": "20-minute cooldown between same alert types on shelter devices"
+            },
+            "// --- CUSTOM MEDIA FILES ---": "",
+            "alertVideoPath": "custom_alert.mp4",
+            "earlyWarningVideoPath": "custom_early_warning.mp4",
+            "exitNotificationVideoPath": "custom_exit.mp4",
+            "testVideoPath": "custom_test.mp4",
+            "ballisticClosureFile": "shelter_closure_instructions.mp4",
+            "windowsClosedFile": "shelter_windows_instructions.mp4",
+            "shelterExitFile": "shelter_all_clear.mp4",
+            "// --- OPTIONAL OVERRIDES ---": "",
+            "_comment_optional": "These are optional - shown for completeness",
+            "_baseUrl_auto": "Auto-detected if not specified",
+            "_citiesJsonPath_default": "Uses __dirname/cities.json if not specified",
+            "_mediaFiles_fallback": "Uses default names if not specified"
+        }
+    ],
+    "platforms": []
 }
