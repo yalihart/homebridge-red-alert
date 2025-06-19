@@ -1,6 +1,6 @@
 {
   "name": "homebridge-red-alert",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "Monitor Israeli Red Alert sirens, early warnings, and exit notifications directly in HomeKit with intelligent audio/video playback across your Chromecast devices. Built for the realities of living in Israel with sophisticated alert prioritization, Hebrew language validation, and shelter-specific automation.",
   "main": "index.js",
   "keywords": [
@@ -13,13 +13,14 @@
   "author": "Yali Hart",
   "license": "MIT",
   "dependencies": {
-    "castv2": "^0.1.10",
     "chromecast-api": "^0.4.2",
+    "compression": "^1.8.0",
+    "crypto": "^1.0.1",
     "express": "^4.21.2",
     "fs-extra": "^11.3.0",
     "mdns-js": "^1.0.3",
     "path": "^0.12.7",
-    "ws": "^8.18.1"
+    "ws": "^8.18.0"
   },
   "engines": {
     "homebridge": "^1.8.0",
