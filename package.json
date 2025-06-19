@@ -10,7 +10,7 @@
     "security",
     "chromecast"
   ],
-  "author": "Yali Hart",
+  "author": "yalihart",
   "license": "MIT",
   "dependencies": {
     "chromecast-api": "^0.4.2",
@@ -20,7 +20,7 @@
     "fs-extra": "^11.3.0",
     "mdns-js": "^1.0.3",
     "path": "^0.12.7",
-    "ws": "^8.18.0"
+    "ws": "^8.18.2"
   },
   "engines": {
     "homebridge": "^1.8.0",
