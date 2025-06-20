@@ -11,6 +11,7 @@
  * - Enhanced validation with Hebrew keywords
  * - Shelter instruction devices with cooldown periods
  * - Reliable Chromecast integration
+ * - Nationwide alert support (city ID 10000000)
  *
  * Author: Yali Hart & AI Friends
  * License: MIT
@@ -34,6 +35,9 @@ const ALERT_TYPES = {
   EARLY_WARNING: "early-warning",
   EXIT_NOTIFICATION: "exit-notification",
 };
+
+// Special city ID for nationwide alerts
+const NATIONWIDE_CITY_ID = 10000000;
 
 // Threat ID mapping for Tzofar alerts
 const THREAT_ID_MAPPING = {
@@ -445,6 +449,29 @@ class RedAlertPlugin {
     }
   }
 
+  // Helper method to check if alert affects monitored cities or is nationwide
+  getAffectedCities(citiesIds) {
+    // Check for nationwide alert first
+    if (citiesIds.includes(NATIONWIDE_CITY_ID)) {
+      this.log.info("🌍 Nationwide alert detected (city ID 10000000)");
+      return this.selectedCities.length > 0
+        ? this.selectedCities
+        : ["Nationwide"];
+    }
+
+    // Match against specific cities
+    const affectedCities = this.selectedCities.filter((cityName) => {
+      const cityId = this.cityNameToId.get(cityName);
+      if (!cityId) {
+        this.log.warn(`⚠️ City "${cityName}" not found in cities data`);
+        return false;
+      }
+      return citiesIds.includes(cityId);
+    });
+
+    return affectedCities;
+  }
+
   // Debounce helper method
   canTriggerAlert(alertType, cityName) {
     const key = `${alertType}_${cityName}`;
@@ -669,20 +696,8 @@ class RedAlertPlugin {
       return;
     }
 
-    // Match against citiesIds
-    const affectedCities = this.selectedCities.filter((cityName) => {
-      const cityId = this.cityNameToId.get(cityName);
-      this.log.debug(
-        `🟡 Checking city "${cityName}" (ID: ${cityId}) against cities`
-      );
-
-      if (!cityId) {
-        this.log.warn(`⚠️ City "${cityName}" not found in cities data`);
-        return false;
-      }
-
-      return citiesIds.includes(cityId);
-    });
+    // Get affected cities (including nationwide check)
+    const affectedCities = this.getAffectedCities(citiesIds);
 
     if (affectedCities.length === 0) {
       this.log.info(`🟡 Early warning found but none for monitored cities`);
@@ -743,20 +758,8 @@ class RedAlertPlugin {
       return;
     }
 
-    // Match against citiesIds
-    const affectedCities = this.selectedCities.filter((cityName) => {
-      const cityId = this.cityNameToId.get(cityName);
-      this.log.debug(
-        `🟢 Checking city "${cityName}" (ID: ${cityId}) against cities`
-      );
-
-      if (!cityId) {
-        this.log.warn(`⚠️ City "${cityName}" not found in cities data`);
-        return false;
-      }
-
-      return citiesIds.includes(cityId);
-    });
+    // Get affected cities (including nationwide check)
+    const affectedCities = this.getAffectedCities(citiesIds);
 
     if (affectedCities.length === 0) {
       this.log.info(`🟢 Exit notification found but none for monitored cities`);
