@@ -522,10 +522,18 @@ class RedAlertPlugin {
       return;
     }
 
-    // Check if any of our configured cities are affected
-    const affectedCities = alertData.cities.filter((city) =>
-      this.selectedCities.includes(city)
-    );
+    // Nationwide check for primary alert: city name "רחבי הארץ"
+    let affectedCities;
+    if (alertData.cities.includes("רחבי הארץ")) {
+      this.log.info('🌍 Nationwide primary alert detected ("רחבי הארץ")');
+      affectedCities =
+        this.selectedCities.length > 0 ? this.selectedCities : ["Nationwide"];
+    } else {
+      // Match by city name
+      affectedCities = alertData.cities.filter((city) =>
+        this.selectedCities.includes(city)
+      );
+    }
 
     if (affectedCities.length === 0) {
       this.log.debug(`🚨 Primary alert found but none for monitored cities`);
