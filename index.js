@@ -361,10 +361,6 @@ class RedAlertPlugin {
 
     // --- HomeKit services
     this.service = new Service.ContactSensor(this.name);
-    this.testSwitchService = new Service.Switch(`${this.name} Test`, "test");
-    this.testSwitchService
-      .getCharacteristic(Characteristic.On)
-      .on("set", this.handleTestSwitch.bind(this));
     this.earlyWarningService = new Service.ContactSensor(
       `${this.name} Early Warning`,
       "early-warning"
@@ -854,7 +850,7 @@ class RedAlertPlugin {
   }
 
   /**
-   * Homebridge services: ContactSensors for each alert type + test Switch.
+   * Homebridge services: ContactSensors for each alert type.
    */
   getServices() {
     const informationService = new Service.AccessoryInformation()
@@ -875,7 +871,6 @@ class RedAlertPlugin {
     return [
       informationService,
       this.service,
-      this.testSwitchService,
       this.earlyWarningService,
       this.exitNotificationService,
     ];
@@ -906,17 +901,6 @@ class RedAlertPlugin {
         ? Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
         : Characteristic.ContactSensorState.CONTACT_DETECTED
     );
-  }
-
-  handleTestSwitch(on, callback) {
-    if (on) {
-      this.log.info("🧪 Running alert test");
-      this.triggerTest();
-      setTimeout(() => {
-        this.testSwitchService.updateCharacteristic(Characteristic.On, false);
-      }, 2000);
-    }
-    callback(null);
   }
 
   triggerTest() {
@@ -1430,7 +1414,7 @@ class RedAlertPlugin {
   }
 
   /**
-   * Optimized media server with caching and compression
+   * Optimized media server with caching, compression, and test endpoint
    */
   setupMediaServer() {
     try {
@@ -1506,6 +1490,13 @@ class RedAlertPlugin {
         this.shelterInstructions.exitFile || this.shelterExitFile || "exit.mp4",
         "exit notification shelter instructions"
       );
+
+      // Test endpoint for Homebridge UI
+      this.server.get("/trigger-test-00001", (req, res) => {
+        this.log.info("🧪 Test endpoint triggered via Homebridge UI");
+        this.triggerTest();
+        res.status(200).send("Test alert triggered");
+      });
 
       this.server.get("/health", (req, res) => {
         res.status(200).send("OK");

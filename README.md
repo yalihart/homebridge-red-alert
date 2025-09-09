@@ -1,3 +1,5 @@
+
+
 # 🚨 Homebridge Red Alert Plugin 🚨
 
 **Red Alert** is a Homebridge plugin for real-time civil defense alerts in Israel, supporting Chromecast devices and HomeKit integration. It provides real-time notifications for primary missile alerts, early warnings, and exit (all-clear) notifications via the Tzofar WebSocket API. All alert types are fully configurable with per-device and per-alert time and volume controls.
@@ -42,7 +44,6 @@ https://youtu.be/Bst3QFTlfBo
   - Primary alert ("Red Alert") 
   - Early-warning ("בדקות הקרובות ייתכן ויופעלו התרעות")
   - Exit notification ("האירוע הסתיים")
-  - Test switch for triggering test video/sound on chromecast devices
 - **📺 Chromecast support** – play alert sounds/videos on one or more Chromecast devices
 - **🏠 Advanced Shelter Speaker System**:
   - Dedicated ballistic protection instructions
@@ -58,6 +59,7 @@ https://youtu.be/Bst3QFTlfBo
 - **🔄 Automatic deduplication** – no duplicate notifications for the same event
 - **🎵 Customizable media** – provide your own videos/sounds or use included defaults
 - **🏙️ City filtering** – only get notified for cities you care about
+- **🧪 Test trigger** – trigger test alerts via Homebridge UI at `/trigger-test-00001`
 
 ---
 
@@ -313,7 +315,6 @@ The plugin creates these HomeKit accessories:
 - **"Red Alert"** – Contact sensor that triggers for primary missile alerts
 - **"Red Alert Early Warning"** – Contact sensor that triggers for early-warning messages  
 - **"Red Alert Exit Notification"** – Contact sensor that triggers for exit notifications
-- **"Red Alert Test"** – Switch to trigger a test alert and media playback
 
 **Sensor States:**
 - **Contact Detected** = No alert (normal state)
@@ -323,6 +324,9 @@ The plugin creates these HomeKit accessories:
 - Turn on all lights when primary alert triggers
 - Send iOS notification when early warning triggers
 - Turn off automation when exit notification triggers
+
+**Test Trigger:**
+- Trigger test alerts via the Homebridge UI by sending an HTTP GET request to `http://<your-homebridge-ip>:8095/trigger-test-00001`
 
 ---
 
@@ -378,6 +382,7 @@ The plugin serves media at these URLs (for debugging):
 - `http://your-homebridge-ip:8095/shelter-instructions-early-warning`
 - `http://your-homebridge-ip:8095/shelter-instructions-exit-notification`
 - `http://your-homebridge-ip:8095/health` (health check)
+- `http://your-homebridge-ip:8095/trigger-test-00001` (test alert trigger)
 
 ---
 
@@ -580,6 +585,10 @@ MIT
 
 ## 📋 Version History
 
+### v4.0.1 (2025-09-09)
+- **🔄 Updated**: Removed test switch from HomeKit integration
+- **✅ Added**: Test trigger endpoint at `/trigger-test-00001` for Homebridge UI
+
 ### v4.0.0 (2025-06-19)
 - **🔌 Tzofar-Only Implementation**: Complete transition to Tzofar WebSocket for all alert types
 - **❌ Removed**: OREF polling, flash alerts (not supported by Tzofar)
@@ -591,3 +600,4 @@ MIT
 - OREF polling + Tzofar WebSocket hybrid approach
 - Flash alert support via OREF API
 - Multiple data sources and polling intervals
+
