@@ -1,6 +1,8 @@
-# 🚨 Homebridge Red Alert Plugin 🚨
+# 🚨 Homebridge Red Alert Enhanced 🚨
 
-**Red Alert** is a Homebridge plugin for real-time civil defense alerts in Israel, supporting Chromecast devices and HomeKit integration. It provides real-time notifications for primary missile alerts, early warnings, and exit (all-clear) notifications via the Tzofar WebSocket API. All alert types are fully configurable with per-device and per-alert time and volume controls.
+> **Fork Notice**: This is a fork of [yalihart/homebridge-red-alert](https://github.com/yalihart/homebridge-red-alert) with added Apple TV Picture-in-Picture notification support. All credit for the original plugin goes to [@yalihart](https://github.com/yalihart).
+
+**Red Alert Enhanced** is a Homebridge plugin for real-time civil defense alerts in Israel, supporting Chromecast devices and HomeKit integration. It provides real-time notifications for primary missile alerts, early warnings, and exit (all-clear) notifications via the Tzofar WebSocket API. All alert types are fully configurable with per-device and per-alert time and volume controls.
 
 https://youtu.be/Bst3QFTlfBo
 
@@ -9,28 +11,28 @@ https://youtu.be/Bst3QFTlfBo
 ## ⚠️ Legal Disclaimer / הצהרת אחריות משפטית / إخلاء مسؤولية قانونية
 
 ### English
-> This software is an independent, community project and is not produced, endorsed, maintained, or approved by any governmental entity, including but not limited to the Israeli Ministry of Defense or the Home Front Command. No relationship, partnership, or affiliation exists between the developers of this project and any government or defense body.  
->  
-> The plugin is provided "as is," without any warranties, express or implied. Usage is strictly at your own risk. The developers disclaim all responsibility for any direct, indirect, incidental, or consequential damages that may arise from the use or inability to use this software.  
->  
+> This software is an independent, community project and is not produced, endorsed, maintained, or approved by any governmental entity, including but not limited to the Israeli Ministry of Defense or the Home Front Command. No relationship, partnership, or affiliation exists between the developers of this project and any government or defense body.
+>
+> The plugin is provided "as is," without any warranties, express or implied. Usage is strictly at your own risk. The developers disclaim all responsibility for any direct, indirect, incidental, or consequential damages that may arise from the use or inability to use this software.
+>
 > This software is not intended to replace or serve as a substitute for any official warning or alert system. Users are strongly advised to rely on official, government-issued alert systems for safety and emergency information.
 
 ---
 
 ### עברית
-> תוכנה זו מהווה יוזמה קהילתית בלתי תלויה, ואינה מופקת, מאושרת, נתמכת או מוסדרת על ידי אף גורם ממשלתי, לרבות אך לא רק משרד הביטחון או פיקוד העורף. אין כל קשר, שותפות או זיקה בין מפתחי פרויקט זה לבין אף גוף ממשלתי או ביטחוני.  
->  
-> התוסף מסופק כפי שהוא ("As-Is") ללא כל אחריות מכל סוג, מפורשת או משתמעת. השימוש בתוסף הוא על אחריות המשתמש בלבד. המפתחים מסירים כל אחריות לנזקים ישירים, עקיפים, נלווים או תוצאתיים העלולים להיגרם כתוצאה מהשימוש או מאי היכולת להשתמש בתוכנה זו.  
->  
+> תוכנה זו מהווה יוזמה קהילתית בלתי תלויה, ואינה מופקת, מאושרת, נתמכת או מוסדרת על ידי אף גורם ממשלתי, לרבות אך לא רק משרד הביטחון או פיקוד העורף. אין כל קשר, שותפות או זיקה בין מפתחי פרויקט זה לבין אף גוף ממשלתי או ביטחוני.
+>
+> התוסף מסופק כפי שהוא ("As-Is") ללא כל אחריות מכל סוג, מפורשת או משתמעת. השימוש בתוסף הוא על אחריות המשתמש בלבד. המפתחים מסירים כל אחריות לנזקים ישירים, עקיפים, נלווים או תוצאתיים העלולים להיגרם כתוצאה מהשימוש או מאי היכולת להשתמש בתוכנה זו.
+>
 > תוכנה זו אינה מיועדת להוות תחליף או כלי רשמי למערכות התרעה רשמיות. מומלץ למשתמשים להסתמך על מערכות התרעה רשמיות של המדינה לצרכי בטיחות וחירום בלבד.
 
 ---
 
 ### العربية
-> هذا البرنامج هو مشروع مجتمعي مستقل وغير منتج أو معتمد أو مدعوم أو مصرح به من قبل أي جهة حكومية، بما في ذلك (وليس حصراً) وزارة الأمن أو الجبهة الداخلية في إسرائيل. لا توجد أي علاقة أو شراكة أو ارتباط بين مطوري هذا المشروع وأي جهة حكومية أو عسكرية.  
->  
-> يتم توفير هذا البرنامج كما هو ("As-Is") دون أي ضمانات صريحة أو ضمنية. استخدامك للبرنامج على مسؤوليتك الخاصة فقط. يخلي المطورون مسؤوليتهم عن أي أضرار مباشرة أو غير مباشرة أو عرضية أو تبعية قد تنشأ عن استخدام أو عدم القدرة على استخدام هذا البرنامج.  
->  
+> هذا البرنامج هو مشروع مجتمعي مستقل وغير منتج أو معتمد أو مدعوم أو مصرح به من قبل أي جهة حكومية، بما في ذلك (وليس حصراً) وزارة الأمن أو الجبهة الداخلية في إسرائيل. لا توجد أي علاقة أو شراكة أو ارتباط بين مطوري هذا المشروع وأي جهة حكومية أو عسكرية.
+>
+> يتم توفير هذا البرنامج كما هو ("As-Is") دون أي ضمانات صريحة أو ضمنية. استخدامك للبرنامج على مسؤوليتك الخاصة فقط. يخلي المطورون مسؤوليتهم عن أي أضرار مباشرة أو غير مباشرة أو عرضية أو تبعية قد تنشأ عن استخدام أو عدم القدرة على استخدام هذا البرنامج.
+>
 > هذا البرنامج ليس بديلاً عن الأنظمة الرسمية للإنذار أو التحذير. يُنصح المستخدمون بالاعتماد على أنظمة الإنذار الرسمية فقط لأغراض السلامة والطوارئ.
 
 ---
@@ -39,10 +41,11 @@ https://youtu.be/Bst3QFTlfBo
 
 - **🔌 Real-time Tzofar WebSocket** – reliable real-time alerts via official Tzofar API
 - **🏠 HomeKit sensors** for:
-  - Primary alert ("Red Alert") 
+  - Primary alert ("Red Alert")
   - Early-warning ("בדקות הקרובות ייתכן ויופעלו התרעות")
   - Exit notification ("האירוע הסתיים")
   - Test switch for triggering test video/sound on chromecast devices
+- **📺 Apple TV Picture-in-Picture notifications** – receive alert overlays while watching Netflix or other apps
 - **📺 Chromecast support** – play alert sounds/videos on one or more Chromecast devices
 - **🏠 Advanced Shelter Speaker System**:
   - Dedicated ballistic protection instructions
@@ -63,51 +66,73 @@ https://youtu.be/Bst3QFTlfBo
 
 ## 🛠️ Installation
 
-**1. Clone this repository into your Homebridge `node_modules` directory (recommended for advanced users):**
+**Option 1: Install via Homebridge UI (Recommended)**
+
+1. Open Homebridge UI in your browser
+2. Go to **Plugins** tab
+3. Search for `homebridge-red-alert-enhanced`
+4. Click **Install**
+5. Restart Homebridge
+
+**Option 2: Install via terminal**
 
 ```bash
-cd /path/to/homebridge/node_modules/
-git clone https://github.com/yalihart/homebridge-red-alert.git
-cd homebridge-red-alert
-npm install
+sudo /opt/homebridge/bin/npm install homebridge-red-alert-enhanced
+sudo systemctl restart homebridge
 ```
 
-**2. Restart Homebridge.**
+> **Note for Raspberry Pi Zero**: If installation fails due to memory, add swap space first or install via Homebridge UI.
 
-**3. Place your alert media files**
+---
 
-By default, the plugin looks for the following files in  
-`<homebridge-root>/red-alert-media/`:
+## ⚙️ Quick Start
 
-**Standard Alert Media:**
-- `alert.mp4` (primary alert)
-- `early.mp4` (early warning)
-- `exit.mp4` (exit notification)
-- `test.mp4` (test alert)
+1. **Install** the plugin (see above)
+2. **Configure** through Homebridge UI:
+   - Go to **Plugins** → **Red Alert Enhanced** → **Settings**
+   - Add your cities (in Hebrew, e.g., "רעננה")
+   - Enable **Apple TV Doorbell** if you want PiP notifications
+   - Save and restart Homebridge
+3. **Add camera to Home app**:
+   - Open Home app on iPhone/iPad
+   - Tap **+** → **Add Accessory** → **More Options...**
+   - Enter pairing code from Homebridge UI
+   - **Important**: Assign camera to the same room as your Apple TV
+4. **Test**: Trigger the test switch in HomeKit and verify Apple TV shows notification with image
 
-**🏠 Shelter Instruction Media:**
-- `ballistic_closure.mp4` (shelter closure instructions)
-- `ballistic_windows_closed.mp4` (windows closed instructions)
-- `exit.mp4` (exit instructions - can be same as standard exit)
+---
 
-> The plugin will auto-copy default media files if none exist.
+## 📺 Apple TV Picture-in-Picture Notifications
+
+This plugin creates a virtual doorbell camera that shows alert images as Picture-in-Picture overlays on Apple TV - even while watching Netflix or other apps.
+
+**Requirements:**
+- Apple TV 4K or Apple TV HD (tvOS 14+)
+- ffmpeg installed on Homebridge server (`sudo apt install ffmpeg`)
+- Camera assigned to same room as Apple TV in Home app
 
 ---
 
 ## ⚙️ Configuration
 
-Edit your Homebridge `config.json` and add an accessory of type `RedAlert`.  
+The plugin is configured through the **Homebridge UI**. No manual config.json editing required.
+
+For advanced users, you can manually add a platform of type `RedAlertCamera` to your `platforms` array.
 Below is a **comprehensive configuration** that demonstrates all features:
 
 ```json
 {
-  "accessory": "RedAlert",
+  "platform": "RedAlertCamera",
   "name": "Red Alert",
   "cities": ["רעננה"],
   "useChromecast": true,
   "chromecastVolume": 80,
   "chromecastTimeout": 30,
   "serverPort": 8095,
+  "appleTVDoorbell": {
+    "enabled": true,
+    "throttleSeconds": 10
+  },
   "tzofar": {
     "enabled": true,
     "wsUrl": "wss://ws.tzevaadom.co.il/socket?platform=ANDROID",
@@ -139,7 +164,7 @@ Below is a **comprehensive configuration** that demonstrates all features:
       }
     },
     {
-      "deviceName": "Bedroom TV", 
+      "deviceName": "Bedroom TV",
       "volume": 30,
       "alerts": {
         "early-warning": { "volume": 20 },
@@ -160,7 +185,7 @@ Below is a **comprehensive configuration** that demonstrates all features:
       }
     ],
     "primaryFile": "ballistic_closure.mp4",
-    "earlyWarningFile": "ballistic_windows_closed.mp4", 
+    "earlyWarningFile": "ballistic_windows_closed.mp4",
     "exitFile": "exit.mp4",
     "minIntervalMinutes": 20
   },
@@ -193,7 +218,7 @@ Below is a **comprehensive configuration** that demonstrates all features:
 
 **⚠️ Important Notes:**
 - Use **copy & paste** to ensure exact match
-- Some cities have extended names like "תל אביב - יפו" 
+- Some cities have extended names like "תל אביב - יפו"
 - The key (left side) may differ from the display name
 - Case and spacing must match exactly
 - The `cities.json` file is included with the plugin and contains all Israeli cities with their official IDs
@@ -202,13 +227,14 @@ Below is a **comprehensive configuration** that demonstrates all features:
 
 | Property                      | Description                                                                                                               |
 |-------------------------------|---------------------------------------------------------------------------------------------------------------------------|
-| `name`                        | Accessory name as seen in HomeKit                                                                                         |
+| `name`                        | Platform name as seen in HomeKit                                                                                          |
 | `cities`                      | Array of cities to monitor (exact keys from included cities.json). If omitted, all cities are monitored.                 |
 | `citiesJsonPath`              | Path to cities.json file (defaults to included file in plugin directory)                                                  |
 | `useChromecast`               | Enable/disable Chromecast playback                                                                                        |
 | `chromecastVolume`            | Default volume for Chromecast devices (0-100)                                                                             |
 | `chromecastTimeout`           | How many seconds to play alert on Chromecast (fallback timeout)                                                           |
 | `chromecastVolumes`           | Array of per-device overrides. Can specify `volume` for device and per-alert-type                                         |
+| `appleTVDoorbell`             | Apple TV doorbell configuration (see below)                                                                               |
 | `shelterInstructions`         | 🏠 **Advanced shelter speaker configuration** (see below)                                                                |
 | `alerts`                      | Per-alert-type configuration (see below)                                                                                  |
 | `tzofar`                      | Tzofar WebSocket configuration (usually defaults are fine)                                                                |
@@ -220,7 +246,7 @@ Each alert type (`early-warning`, `exit-notification`) supports:
 
 - `enabled`   – Enable/disable this alert type
 - `startHour` – Hour to start notifications (0-23), Israel time
-- `endHour`   – Hour to end notifications (0-23), Israel time  
+- `endHour`   – Hour to end notifications (0-23), Israel time
   - If omitted, alert is always active (24/7)
   - For overnight ranges (22-6), use `"startHour": 22, "endHour": 6`
 - `volume`    – Default volume for this type (can be overridden per device)
@@ -236,7 +262,7 @@ You can set:
 **Volume Priority (highest to lowest):**
 1. Device-specific alert volume (e.g., "Living Room TV" early-warning volume)
 2. Device-specific default volume
-3. Alert-type default volume  
+3. Alert-type default volume
 4. Global default volume
 
 #### 🔌 Tzofar WebSocket Configuration (`tzofar`)
@@ -244,7 +270,7 @@ You can set:
 Usually the defaults work fine, but you can configure:
 
 - `enabled` – Enable/disable Tzofar WebSocket (default: true)
-- `wsUrl` – WebSocket URL (default: official Tzofar endpoint)  
+- `wsUrl` – WebSocket URL (default: official Tzofar endpoint)
 - `reconnectInterval` – Initial reconnect delay in ms (default: 10000)
 - `maxReconnectInterval` – Maximum reconnect delay in ms (default: 60000)
 - `maxReconnectAttempts` – Max reconnection attempts (default: 10)
@@ -294,7 +320,7 @@ Usually the defaults work fine, but you can configure:
 2. **Cooldown System**: Early warnings have a per-device cooldown to prevent instruction spam
 3. **Separate Media**: Shelter devices play ballistic protection instructions while entertainment devices play standard alerts
 4. **Volume Control**: Shelter devices have separate volume settings optimized for instruction clarity
-5. **Alert-Specific Logic**: 
+5. **Alert-Specific Logic**:
    - **Primary alerts**: Always play closure instructions (no cooldown)
    - **Early warnings**: Play windows-closed instructions (with 20-min cooldown)
    - **Exit notifications**: Always play exit instructions (no cooldown)
@@ -311,7 +337,7 @@ Usually the defaults work fine, but you can configure:
 The plugin creates these HomeKit accessories:
 
 - **"Red Alert"** – Contact sensor that triggers for primary missile alerts
-- **"Red Alert Early Warning"** – Contact sensor that triggers for early-warning messages  
+- **"Red Alert Early Warning"** – Contact sensor that triggers for early-warning messages
 - **"Red Alert Exit Notification"** – Contact sensor that triggers for exit notifications
 - **"Red Alert Test"** – Switch to trigger a test alert and media playback
 
@@ -323,6 +349,99 @@ The plugin creates these HomeKit accessories:
 - Turn on all lights when primary alert triggers
 - Send iOS notification when early warning triggers
 - Turn off automation when exit notification triggers
+
+---
+
+## Apple TV Integration
+
+Get alert notifications as Picture-in-Picture overlays on your Apple TV while watching Netflix, YouTube, or any other app.
+
+This feature creates a virtual doorbell camera in HomeKit. When an alert triggers, the doorbell "rings" and Apple TV displays a PiP notification overlay - even while you're watching full-screen content.
+
+### How It Works
+
+```
+Alert detected via Tzofar WebSocket
+       |
+       v
+HomeKit sensors trigger (normal behavior)
+       |
+       v
+Doorbell camera "rings"
+       |
+       v
+Apple TV shows PiP overlay with alert image
+       |
+       v
+Image shows alert type (red/orange/purple/blue)
+       |
+       v
+After alert ends, camera returns to idle state
+```
+
+### Requirements
+
+- **Apple TV 4K or Apple TV HD** (tvOS 14+)
+- **ffmpeg** installed on your Homebridge server
+- **Homebridge 1.8.0+** with Camera support
+- The doorbell camera must be added to Home app and assigned to a room with Apple TV
+
+### Setup
+
+**1. Add the RedAlertCamera platform to your config:**
+
+Add the following to your `platforms` array in `config.json`:
+
+```json
+{
+  "platform": "RedAlertCamera",
+  "name": "Red Alert",
+  "cities": ["רעננה"],
+  "appleTVDoorbell": {
+    "enabled": true,
+    "throttleSeconds": 10
+  }
+}
+```
+
+**2. Restart Homebridge and add the camera in Home app:**
+- Open Home app on iPhone/iPad
+- Tap "+" then "Add Accessory"
+- Scan the QR code from Homebridge UI or enter the pairing code
+- Assign the camera to the same room as your Apple TV
+
+**3. Configure Apple TV notifications:**
+- On Apple TV: Settings > Notifications > Allow notifications from Home
+- The camera should appear as a doorbell that can send notifications
+
+### Configuration Options
+
+| Property            | Description                                                                                   |
+|---------------------|-----------------------------------------------------------------------------------------------|
+| `enabled`           | Enable/disable Apple TV doorbell notifications (default: false)                              |
+| `throttleSeconds`   | Minimum seconds between doorbell rings to prevent spam (default: 10)                         |
+
+### Alert Type Images
+
+The camera displays different images based on alert type:
+
+| Alert Type        | Image File        | Description                    |
+|-------------------|-------------------|--------------------------------|
+| Primary Alert     | alert-still.png   | Incoming missiles/threats      |
+| Early Warning     | early-alert.png   | Potential alerts in your area  |
+| Exit Notification | exit.png          | All clear - event ended        |
+
+### Testing
+
+Use the existing **"Red Alert Test"** switch in HomeKit to trigger a test alert. This will ring the doorbell camera and show the alert image on Apple TV.
+
+### Troubleshooting Apple TV
+
+- **No PiP notification**: Ensure camera is assigned to same room as Apple TV in Home app
+- **Camera not appearing**: Check Homebridge logs for `RedAlertCamera` registration
+- **ffmpeg not found**: Install ffmpeg (`brew install ffmpeg` on macOS, `apt install ffmpeg` on Linux)
+- **Notifications disabled**: On Apple TV go to Settings > Notifications > Home > Allow notifications
+- **Test switch not working**: Verify the camera platform is configured and camera is paired
 
 ---
 
@@ -350,7 +469,7 @@ The plugin creates these HomeKit accessories:
 By default, the plugin expects these files under `<homebridge-root>/red-alert-media/`:
 
 - `alert.mp4` – Primary alert (red alert/missile incoming)
-- `early.mp4` – Early warning ("בדקות הקרובות ייתכן ויופעלו התרעות")  
+- `early.mp4` – Early warning ("בדקות הקרובות ייתכן ויופעלו התרעות")
 - `exit.mp4` – Exit notification ("האירוע הסתיים באזורים")
 - `test.mp4` – Test alert
 
@@ -358,12 +477,12 @@ By default, the plugin expects these files under `<homebridge-root>/red-alert-me
 For shelter speaker devices, additional instruction files:
 
 - `ballistic_closure.mp4` – "Close shelter immediately" instructions for primary alerts
-- `ballistic_windows_closed.mp4` – "Close windows and stay protected" for early warnings  
+- `ballistic_windows_closed.mp4` – "Close windows and stay protected" for early warnings
 - `exit.mp4` – "All clear, you may exit" for exit notifications
 
 **File Format Recommendations:**
 - **Video**: MP4 with H.264 video codec
-- **Audio**: AAC audio codec  
+- **Audio**: AAC audio codec
 - **Resolution**: 720p or 1080p for video alerts
 - **Audio-only**: Use MP4 container with AAC audio (no video track needed)
 - **Duration**: Keep instruction audio concise (30-60 seconds)
@@ -372,7 +491,7 @@ For shelter speaker devices, additional instruction files:
 **Media Server Endpoints:**
 The plugin serves media at these URLs (for debugging):
 - `http://your-homebridge-ip:8095/alert-video`
-- `http://your-homebridge-ip:8095/early-warning-video` 
+- `http://your-homebridge-ip:8095/early-warning-video`
 - `http://your-homebridge-ip:8095/exit-notification-video`
 - `http://your-homebridge-ip:8095/shelter-instructions-primary`
 - `http://your-homebridge-ip:8095/shelter-instructions-early-warning`
@@ -444,6 +563,13 @@ The plugin serves media at these URLs (for debugging):
 - **Instructions repeating**: Check `minIntervalMinutes` setting (default 20 minutes)
 - **Wrong audio playing**: Verify media file paths in `shelterInstructions` configuration
 
+### Apple TV Troubleshooting
+- **No PiP overlay**: Ensure camera is assigned to same room as Apple TV in Home app
+- **Camera not appearing**: Check Homebridge logs for `RedAlertCamera` registration
+- **ffmpeg not found**: Install ffmpeg (`brew install ffmpeg` on macOS, `apt install ffmpeg` on Linux)
+- **Notifications disabled**: On Apple TV go to Settings > Notifications > Home > Allow notifications
+- **Test switches not working**: Verify the camera platform is configured and camera is paired
+
 ### Debug Logging
 Enable debug logging to see detailed behavior:
 ```
@@ -451,6 +577,7 @@ Enable debug logging to see detailed behavior:
 [Shelter] Playing primary instructions on Shelter speaker at volume 65%
 [Shelter] Skipping early-warning instructions on Shelter speaker (cooldown active)
 [Volume] Living Room TV: 25% (source: device-specific early-warning)
+[Apple TV] Ringing doorbell for primary alert
 ```
 
 ### Media Server Issues
@@ -477,7 +604,7 @@ Enable debug logging to see detailed behavior:
    - Arabic: "قصف متوقع - أغلقوا الملجأ فوراً"
 
 2. **Early Warning** (`ballistic_windows_closed.mp4`):
-   - Hebrew: "סגרו חלונות והישארו במרחב מוגן"  
+   - Hebrew: "סגרו חלונות והישארו במרחב מוגן"
    - English: "Close windows and remain in protected space"
    - Arabic: "أغلقوا النوافذ وابقوا في المكان المحمي"
 
@@ -491,7 +618,7 @@ Enable debug logging to see detailed behavior:
 **Minimal Configuration:**
 ```json
 {
-  "accessory": "RedAlert",
+  "platform": "RedAlertCamera",
   "name": "Red Alert",
   "cities": ["רעננה"]
 }
@@ -500,7 +627,7 @@ Enable debug logging to see detailed behavior:
 **Family Home with Multiple Rooms:**
 ```json
 {
-  "accessory": "RedAlert",
+  "platform": "RedAlertCamera",
   "name": "Red Alert",
   "cities": ["רעננה", "תל אביב - יפו"],
   "alerts": {
@@ -534,8 +661,8 @@ Enable debug logging to see detailed behavior:
 **Business/Office Setup:**
 ```json
 {
-  "accessory": "RedAlert",
-  "name": "Office Red Alert",
+  "platform": "RedAlertCamera",
+  "name": "Red Alert",
   "cities": ["תל אביב - יפו"],
   "alerts": {
     "early-warning": {
@@ -552,11 +679,25 @@ Enable debug logging to see detailed behavior:
 }
 ```
 
+**Apple TV Only Setup:**
+```json
+{
+  "platform": "RedAlertCamera",
+  "name": "Red Alert",
+  "cities": ["רעננה"],
+  "useChromecast": false,
+  "appleTVDoorbell": {
+    "enabled": true,
+    "throttleSeconds": 10
+  }
+}
+```
+
 ---
 
 ## 🤝 Contributing & Contact
 
-Please feel free to **create pull requests, request features, report issues, or contact me for any reason**.  
+Please feel free to **create pull requests, request features, report issues, or contact me for any reason**.
 I am happy to help and welcome contributions from anyone!
 
 ### 🇮🇱 עם ישראל חי 🇮🇱
@@ -579,6 +720,26 @@ MIT
 ---
 
 ## 📋 Version History
+
+### v4.1.8 (2026-04)
+- **Fix**: Snapshot now reads image directly instead of using ffmpeg (much faster on Pi)
+- **Fix**: Removed citiesJsonPath from config schema (was causing errors)
+
+### v4.1.6 (2026-04)
+- **Feature**: Platform now creates both camera AND sensors/test switch
+- **Fix**: Users no longer need separate accessory config - platform handles everything
+- **Fix**: Removed deprecated crypto and path dependencies
+
+### v4.1.3 (2026-04)
+- **Fix**: Config schema now correctly defines plugin as platform type
+- **Fix**: Homebridge UI no longer deletes platform configuration when making changes
+
+### v4.1.2 (2026-04)
+- **Docs**: Fixed all config examples to use `"platform": "RedAlertCamera"` instead of `"accessory": "RedAlert"`
+
+### v4.1.0 (2026-03)
+- **Apple TV PiP Notifications**: New doorbell camera feature for Picture-in-Picture alerts on Apple TV
+- **RedAlertCamera Platform**: New camera platform for Apple TV integration
 
 ### v4.0.0 (2025-06-19)
 - **🔌 Tzofar-Only Implementation**: Complete transition to Tzofar WebSocket for all alert types

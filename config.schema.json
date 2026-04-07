@@ -1,18 +1,18 @@
 {
-    "pluginAlias": "RedAlert",
-    "pluginType": "accessory",
+    "pluginAlias": "RedAlertCamera",
+    "pluginType": "platform",
     "singular": true,
-    "headerDisplay": "Red Alert Plugin v4.0.0 - Tzofar WebSocket Integration for Israeli Home Front Command alerts with HomeKit and Chromecast support.",
-    "footerDisplay": "For more information visit the [plugin homepage](https://github.com/yalihart/homebridge-red-alert).",
+    "headerDisplay": "Red Alert Enhanced - Israeli civil defense alerts with Apple TV PiP notifications, HomeKit, and Chromecast support.",
+    "footerDisplay": "For more information visit the [plugin homepage](https://github.com/GibliX/homebridge-red-alert).",
     "schema": {
         "type": "object",
         "properties": {
             "name": {
-                "title": "Accessory Name",
+                "title": "Platform Name",
                 "type": "string",
                 "default": "Red Alert",
                 "required": true,
-                "description": "Name for the HomeKit accessory"
+                "description": "Name for the HomeKit platform"
             },
             "cities": {
                 "title": "Monitored Cities",
@@ -26,12 +26,6 @@
                 ],
                 "required": true,
                 "description": "List of Israeli cities to monitor for alerts (in Hebrew)"
-            },
-            "citiesJsonPath": {
-                "title": "Cities Data File Path",
-                "type": "string",
-                "default": "cities.json",
-                "description": "Path to cities.json file containing city ID mappings"
             },
             "useChromecast": {
                 "title": "Enable Chromecast",
@@ -68,6 +62,27 @@
                 "type": "string",
                 "placeholder": "http://192.168.1.100:8095",
                 "description": "Override auto-detected base URL for media server"
+            },
+            "appleTVDoorbell": {
+                "title": "Apple TV Doorbell Settings",
+                "type": "object",
+                "description": "Enable doorbell camera to receive PiP overlay notifications on Apple TV while watching Netflix or other apps",
+                "properties": {
+                    "enabled": {
+                        "title": "Enable Apple TV Doorbell",
+                        "type": "boolean",
+                        "default": false,
+                        "description": "When enabled, alerts will trigger a doorbell notification that appears as a PiP overlay on Apple TV"
+                    },
+                    "throttleSeconds": {
+                        "title": "Throttle (seconds)",
+                        "type": "integer",
+                        "default": 10,
+                        "minimum": 5,
+                        "maximum": 300,
+                        "description": "Minimum seconds between doorbell rings to prevent spam"
+                    }
+                }
             },
             "tzofar": {
                 "title": "Tzofar WebSocket Settings",
@@ -404,6 +419,16 @@
                 "chromecastTimeout",
                 "serverPort",
                 "baseUrl"
+            ]
+        },
+        {
+            "type": "section",
+            "title": "Apple TV Doorbell (PiP Overlay)",
+            "expandable": true,
+            "expanded": true,
+            "items": [
+                "appleTVDoorbell.enabled",
+                "appleTVDoorbell.throttleSeconds"
             ]
         },
         {

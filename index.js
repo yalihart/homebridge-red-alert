@@ -25,8 +25,12 @@ const compression = require("compression");
 const ChromecastAPI = require("chromecast-api");
 const os = require("os");
 const crypto = require("crypto");
+const { spawn } = require("child_process");
 
-let Service, Characteristic;
+let Service, Characteristic, UUIDGen;
+
+// Global reference to camera platform for triggering doorbell from accessory
+let cameraPlatformInstance = null;
 
 // Alert types and their canonical titles (in Hebrew)
 const ALERT_TYPES = {
@@ -359,12 +363,20 @@ class RedAlertPlugin {
     this.tzofarClient = null;
     this.devices = [];
 
+    // --- Apple TV Doorbell Configuration
+    this.useAppleTVDoorbell = config.appleTVDoorbell?.enabled === true;
+    this.doorbellThrottle = (config.appleTVDoorbell?.throttleSeconds || 10) * 1000;
+    this.lastDoorbellRing = 0;
+
     // --- HomeKit services
     this.service = new Service.ContactSensor(this.name);
+
+    // Test switch for triggering test alerts
     this.testSwitchService = new Service.Switch(`${this.name} Test`, "test");
     this.testSwitchService
       .getCharacteristic(Characteristic.On)
       .on("set", this.handleTestSwitch.bind(this));
+
     this.earlyWarningService = new Service.ContactSensor(
       `${this.name} Early Warning`,
       "early-warning"
@@ -572,13 +584,13 @@ class RedAlertPlugin {
       this.stopExitNotificationPlayback();
     }
 
-    this.log.info(`🚨 PRIMARY ALERT TRIGGERED (${threatInfo.name})`);
-    this.log.info(`📍 Areas: ${debouncedCities.join(", ")}`);
+    this.log.info(`PRIMARY ALERT TRIGGERED (${threatInfo.name})`);
+    this.log.info(`Areas: ${debouncedCities.join(", ")}`);
     this.log.info(
-      `⚠️ Threat Level: ${alertData.threat} (Priority: ${threatInfo.priority})`
+      `Threat Level: ${alertData.threat} (Priority: ${threatInfo.priority})`
     );
     this.log.info(
-      `⏰ Time: ${new Date().toLocaleString("en-US", {
+      `Time: ${new Date().toLocaleString("en-US", {
         timeZone: "Asia/Jerusalem",
       })} (Israel time)`
     );
@@ -590,6 +602,9 @@ class RedAlertPlugin {
       Characteristic.ContactSensorState,
       Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
     );
+
+    // Ring Apple TV doorbell for PiP overlay notification
+    this.ringDoorbell(ALERT_TYPES.PRIMARY, debouncedCities);
 
     if (this.useChromecast) {
       this.playChromecastMedia(ALERT_TYPES.PRIMARY);
@@ -743,6 +758,10 @@ class RedAlertPlugin {
     this.log.info(
       `🟡 EARLY WARNING TRIGGERED for areas: ${debouncedCities.join(", ")}`
     );
+
+    // Ring Apple TV doorbell for PiP overlay notification
+    this.ringDoorbell(ALERT_TYPES.EARLY_WARNING, debouncedCities);
+
     this.triggerEarlyWarning(debouncedCities);
   }
 
@@ -799,6 +818,10 @@ class RedAlertPlugin {
     this.log.info(
       `🟢 EXIT NOTIFICATION TRIGGERED for areas: ${debouncedCities.join(", ")}`
     );
+
+    // Ring Apple TV doorbell for PiP overlay notification
+    this.ringDoorbell(ALERT_TYPES.EXIT_NOTIFICATION, debouncedCities);
+
     this.triggerExitNotification(debouncedCities);
   }
 
@@ -860,7 +883,7 @@ class RedAlertPlugin {
     const informationService = new Service.AccessoryInformation()
       .setCharacteristic(Characteristic.Manufacturer, "Homebridge")
       .setCharacteristic(Characteristic.Model, "Red Alert Tzofar")
-      .setCharacteristic(Characteristic.SerialNumber, "4.0.1");
+      .setCharacteristic(Characteristic.SerialNumber, "4.1.0");
 
     this.service
       .getCharacteristic(Characteristic.ContactSensorState)
@@ -872,13 +895,15 @@ class RedAlertPlugin {
       .getCharacteristic(Characteristic.ContactSensorState)
       .on("get", this.getExitNotificationState.bind(this));
 
-    return [
+    const services = [
       informationService,
       this.service,
       this.testSwitchService,
       this.earlyWarningService,
       this.exitNotificationService,
     ];
+
+    return services;
   }
 
   getAlertState(callback) {
@@ -910,7 +935,7 @@ class RedAlertPlugin {
 
   handleTestSwitch(on, callback) {
     if (on) {
-      this.log.info("🧪 Running alert test");
+      this.log.info("Running alert test");
       this.triggerTest();
       setTimeout(() => {
         this.testSwitchService.updateCharacteristic(Characteristic.On, false);
@@ -919,8 +944,42 @@ class RedAlertPlugin {
     callback(null);
   }
 
+  // --- Apple TV Doorbell Methods ---
+
+  /**
+   * Ring the doorbell to trigger Apple TV PiP notification
+   * Throttled to prevent excessive ringing
+   */
+  ringDoorbell(alertType, cities) {
+    if (!this.useAppleTVDoorbell) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - this.lastDoorbellRing < this.doorbellThrottle) {
+      this.log.debug(
+        `Doorbell ring throttled (${Math.ceil(
+          (this.doorbellThrottle - (now - this.lastDoorbellRing)) / 1000
+        )}s remaining)`
+      );
+      return;
+    }
+
+    this.lastDoorbellRing = now;
+    this.log.info(
+      `Ringing Apple TV doorbell for ${alertType}: ${cities.join(", ")}`
+    );
+
+    // Trigger the camera platform doorbell if available
+    if (cameraPlatformInstance) {
+      cameraPlatformInstance.ringDoorbell(alertType);
+    } else {
+      this.log.warn("Camera platform not available - add RedAlertCamera platform to config");
+    }
+  }
+
   triggerTest() {
-    this.log.info(`🧪 TEST ALERT TRIGGERED`);
+    this.log.info(`TEST ALERT TRIGGERED`);
     this.isAlertActive = true;
     this.alertActiveCities =
       this.selectedCities.length > 0 ? [this.selectedCities[0]] : ["Test"];
@@ -928,13 +987,17 @@ class RedAlertPlugin {
       Characteristic.ContactSensorState,
       Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
     );
+
+    // Ring Apple TV doorbell for PiP overlay notification
+    this.ringDoorbell(ALERT_TYPES.PRIMARY, this.alertActiveCities);
+
     if (this.useChromecast) {
       this.playChromecastMedia(ALERT_TYPES.TEST);
     }
     setTimeout(() => {
       this.isAlertActive = false;
       this.alertActiveCities = [];
-      this.log.info("✅ Test alert reset");
+      this.log.info("Test alert reset");
       this.service.updateCharacteristic(
         Characteristic.ContactSensorState,
         Characteristic.ContactSensorState.CONTACT_DETECTED
@@ -1591,5 +1654,349 @@ class RedAlertPlugin {
 module.exports = (api) => {
   Service = api.hap.Service;
   Characteristic = api.hap.Characteristic;
+  UUIDGen = api.hap.uuid;
+
+  // Register platform - this creates both the camera AND the sensors
+  api.registerPlatform("homebridge-red-alert", "RedAlertCamera", RedAlertCameraPlatform);
+
+  // Keep accessory registration for backward compatibility with old configs
   api.registerAccessory("homebridge-red-alert", "RedAlert", RedAlertPlugin);
+};
+
+/**
+ * RedAlertHandler - Alert handling logic for use with platform accessories
+ * This is used by RedAlertCameraPlatform to create sensors on a platform accessory
+ */
+class RedAlertHandler extends RedAlertPlugin {
+  constructor(log, config, api, platformAccessory, cameraPlatform) {
+    // Call parent constructor but we'll override service creation
+    super(log, config, api);
+
+    this.platformAccessory = platformAccessory;
+    this.cameraPlatform = cameraPlatform;
+
+    // Remove services created by parent and recreate on platform accessory
+    this.setupPlatformServices();
+  }
+
+  setupPlatformServices() {
+    // Get or add services on the platform accessory
+    this.service = this.platformAccessory.getService(Service.ContactSensor) ||
+      this.platformAccessory.addService(Service.ContactSensor, this.name, "primary");
+
+    this.testSwitchService = this.platformAccessory.getService(Service.Switch) ||
+      this.platformAccessory.addService(Service.Switch, `${this.name} Test`, "test");
+
+    this.earlyWarningService = this.platformAccessory.getServiceById(Service.ContactSensor, "early-warning") ||
+      this.platformAccessory.addService(Service.ContactSensor, `${this.name} Early Warning`, "early-warning");
+
+    this.exitNotificationService = this.platformAccessory.getServiceById(Service.ContactSensor, "exit-notification") ||
+      this.platformAccessory.addService(Service.ContactSensor, `${this.name} Exit Notification`, "exit-notification");
+
+    // Setup characteristics
+    this.testSwitchService
+      .getCharacteristic(Characteristic.On)
+      .on("set", this.handleTestSwitch.bind(this));
+
+    this.service
+      .getCharacteristic(Characteristic.ContactSensorState)
+      .on("get", this.getAlertState.bind(this));
+
+    this.earlyWarningService
+      .getCharacteristic(Characteristic.ContactSensorState)
+      .on("get", this.getEarlyWarningState.bind(this));
+
+    this.exitNotificationService
+      .getCharacteristic(Characteristic.ContactSensorState)
+      .on("get", this.getExitNotificationState.bind(this));
+
+    this.log.info("Platform services configured: Contact sensors + Test switch");
+  }
+
+  // Override getServices since we don't need it for platform accessories
+  getServices() {
+    return [];
+  }
+}
+
+/**
+ * Camera Platform for Apple TV Doorbell notifications
+ * Creates a separate camera accessory that shows PiP on Apple TV
+ */
+class RedAlertCameraPlatform {
+  constructor(log, config, api) {
+    this.log = log;
+    this.config = config || {};
+    this.api = api;
+    this.accessories = [];
+    this.cachedAccessories = new Map();
+
+    this.name = this.config.name || "Red Alert Camera";
+    this.videoProcessor = this.config.videoProcessor || "ffmpeg";
+    this.mediaPath = this.config.mediaPath || path.join(__dirname, "media");
+
+    // Alert state
+    this.currentState = "idle"; // idle, pre-alert, alert
+
+    // Store global reference so accessory can trigger doorbell
+    cameraPlatformInstance = this;
+
+    // Create internal alert handler (RedAlertPlugin instance without accessory registration)
+    // This handles all the alert logic, WebSocket, Chromecast, etc.
+    this.alertHandler = null;
+
+    if (api) {
+      api.on("didFinishLaunching", () => {
+        this.log.info("Red Alert Camera Platform loaded");
+        this.setupCamera();
+        this.setupSensorsAccessory();
+      });
+    }
+  }
+
+  setupSensorsAccessory() {
+    // Create or restore the sensors accessory
+    const sensorName = this.config.name || "Red Alert";
+    const uuid = UUIDGen.generate(sensorName + "-sensors");
+
+    let sensorsAccessory = this.cachedAccessories.get(uuid);
+
+    if (!sensorsAccessory) {
+      this.log.info("Creating new sensors accessory: " + sensorName);
+      sensorsAccessory = new this.api.platformAccessory(sensorName, uuid);
+
+      // Add accessory info
+      sensorsAccessory.getService(Service.AccessoryInformation)
+        .setCharacteristic(Characteristic.Manufacturer, "Homebridge")
+        .setCharacteristic(Characteristic.Model, "Red Alert Tzofar")
+        .setCharacteristic(Characteristic.SerialNumber, "RA-SENSORS-001");
+
+      this.api.registerPlatformAccessories("homebridge-red-alert", "RedAlertCamera", [sensorsAccessory]);
+    }
+
+    // Create the internal alert handler with the sensors accessory
+    this.alertHandler = new RedAlertHandler(this.log, this.config, this.api, sensorsAccessory, this);
+
+    this.log.info("Red Alert sensors accessory configured");
+  }
+
+  setupCamera() {
+    const uuid = UUIDGen.generate(this.name);
+    const accessory = new this.api.platformAccessory(this.name, uuid, this.api.hap.Categories.VIDEO_DOORBELL);
+
+    // Add accessory info
+    accessory.getService(Service.AccessoryInformation)
+      .setCharacteristic(Characteristic.Manufacturer, "Red Alert")
+      .setCharacteristic(Characteristic.Model, "Siren Doorbell")
+      .setCharacteristic(Characteristic.SerialNumber, "RA-CAM-001");
+
+    // Create doorbell service
+    const doorbellService = new Service.Doorbell(this.name);
+    accessory.addService(doorbellService);
+
+    // Create camera controller
+    const delegate = new RedAlertStreamingDelegate(this.api.hap, this.config, this.log, this);
+
+    const options = {
+      cameraStreamCount: 2,
+      delegate: delegate,
+      streamingOptions: {
+        supportedCryptoSuites: [this.api.hap.SRTPCryptoSuites.AES_CM_128_HMAC_SHA1_80],
+        video: {
+          resolutions: [
+            [1920, 1080, 30],
+            [1280, 720, 30],
+            [640, 480, 30],
+            [640, 360, 30],
+            [320, 240, 15],
+          ],
+          codec: {
+            profiles: [this.api.hap.H264Profile.BASELINE],
+            levels: [this.api.hap.H264Level.LEVEL3_1],
+          },
+        },
+        audio: undefined, // No audio for simplicity
+      },
+    };
+
+    const cameraController = new this.api.hap.CameraController(options);
+    accessory.configureController(cameraController);
+
+    this.cameraController = cameraController;
+    this.doorbellService = doorbellService;
+    this.delegate = delegate;
+
+    // Publish as external accessory
+    this.api.publishExternalAccessories("homebridge-red-alert", [accessory]);
+    this.log.info("Red Alert Camera published - add it in Home app using code from Homebridge");
+  }
+
+  // Called by main plugin to ring doorbell
+  ringDoorbell(alertType) {
+    if (!this.doorbellService) return;
+
+    // Update camera state based on alert type
+    let cameraState = "alert";
+    if (alertType === "early-warning") {
+      cameraState = "pre-alert";
+    } else if (alertType === "exit-notification") {
+      cameraState = "exit";
+    } else if (alertType === "drone") {
+      cameraState = "drone";
+    } else {
+      cameraState = "alert"; // primary, test, etc.
+    }
+
+    this.currentState = cameraState;
+    if (this.delegate) this.delegate.setCurrentState(cameraState);
+
+    this.log.info(`Ringing doorbell for ${alertType}, camera state: ${this.currentState}`);
+
+    // Small delay to ensure snapshot reflects new state before doorbell rings
+    setTimeout(() => {
+      // Trigger doorbell
+      this.doorbellService
+        .getCharacteristic(Characteristic.ProgrammableSwitchEvent)
+        .updateValue(Characteristic.ProgrammableSwitchEvent.SINGLE_PRESS);
+    }, 300);
+
+    // Reset to idle after 15 seconds (shortly after test alerts reset)
+    setTimeout(() => {
+      this.currentState = "idle";
+      if (this.delegate) this.delegate.setCurrentState("idle");
+      this.log.debug("Camera state reset to idle");
+    }, 15000);
+  }
+
+  configureAccessory(accessory) {
+    this.log.info("Restoring cached accessory: " + accessory.displayName);
+    this.cachedAccessories.set(accessory.UUID, accessory);
+    this.accessories.push(accessory);
+  }
+}
+
+/**
+ * Streaming delegate for camera
+ */
+class RedAlertStreamingDelegate {
+  constructor(hap, config, log, platform) {
+    this.hap = hap;
+    this.log = log;
+    this.platform = platform;
+    this.videoProcessor = config.videoProcessor || "ffmpeg";
+    this.mediaPath = config.mediaPath || path.join(__dirname, "media");
+
+    this.currentState = "idle";
+    this.pendingSessions = new Map();
+    this.ongoingSessions = new Map();
+  }
+
+  setCurrentState(state) {
+    this.currentState = state;
+  }
+
+  getCurrentImage() {
+    switch (this.currentState) {
+      case "alert":
+        return path.join(this.mediaPath, "alert-still.png");
+      case "pre-alert":
+        return path.join(this.mediaPath, "early-alert.png");
+      case "drone":
+        return path.join(this.mediaPath, "alert-still.png");
+      case "exit":
+        return path.join(this.mediaPath, "exit.png");
+      default:
+        return path.join(this.mediaPath, "alert-still.png");
+    }
+  }
+
+  handleSnapshotRequest(request, callback) {
+    const currentImage = this.getCurrentImage();
+    this.log.info(`Snapshot requested: ${request.width}x${request.height}, state: ${this.currentState}, image: ${currentImage}`);
+
+    // Check if image exists
+    if (!fs.existsSync(currentImage)) {
+      this.log.error(`Snapshot image not found: ${currentImage}`);
+      callback(new Error("Image not found"));
+      return;
+    }
+
+    // Read image directly without ffmpeg - much faster on slow devices like Pi Zero
+    // HomeKit can handle PNG images and will resize as needed
+    try {
+      const imageBuffer = fs.readFileSync(currentImage);
+      this.log.info(`Snapshot read successfully: ${imageBuffer.length} bytes`);
+      callback(undefined, imageBuffer);
+    } catch (error) {
+      this.log.error(`Failed to read snapshot image: ${error.message}`);
+      callback(error);
+    }
+  }
+
+  prepareStream(request, callback) {
+    const sessionInfo = {
+      address: request.targetAddress,
+      videoPort: request.video.port,
+      videoSRTP: Buffer.concat([request.video.srtp_key, request.video.srtp_salt]),
+      videoSSRC: this.hap.CameraController.generateSynchronisationSource(),
+    };
+
+    this.pendingSessions.set(request.sessionID, sessionInfo);
+
+    callback(undefined, {
+      video: {
+        port: request.video.port,
+        ssrc: sessionInfo.videoSSRC,
+        srtp_key: request.video.srtp_key,
+        srtp_salt: request.video.srtp_salt,
+      },
+    });
+  }
+
+  handleStreamRequest(request, callback) {
+    const sessionId = request.sessionID;
+
+    if (request.type === this.hap.StreamRequestTypes.START) {
+      const session = this.pendingSessions.get(sessionId);
+      if (!session) {
+        callback(new Error("No session"));
+        return;
+      }
+
+      const currentImage = this.getCurrentImage();
+      const ffmpegArgs = [
+        "-loop", "1",
+        "-i", currentImage,
+        "-vf", `scale=${request.video.width}:${request.video.height}`,
+        "-vcodec", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-r", String(Math.min(request.video.fps, 15)),
+        "-tune", "stillimage",
+        "-preset", "ultrafast",
+        "-b:v", `${request.video.max_bit_rate}k`,
+        "-payload_type", String(request.video.pt),
+        "-ssrc", session.videoSSRC.toString(),
+        "-f", "rtp",
+        "-srtp_out_suite", "AES_CM_128_HMAC_SHA1_80",
+        "-srtp_out_params", session.videoSRTP.toString("base64"),
+        `srtp://${session.address}:${session.videoPort}?rtcpport=${session.videoPort}&pkt_size=1316`,
+      ];
+
+      const ffmpeg = spawn(this.videoProcessor, ffmpegArgs, { env: process.env });
+      ffmpeg.on("close", () => this.ongoingSessions.delete(sessionId));
+      this.ongoingSessions.set(sessionId, ffmpeg);
+      this.pendingSessions.delete(sessionId);
+      callback();
+
+    } else if (request.type === this.hap.StreamRequestTypes.STOP) {
+      const ffmpeg = this.ongoingSessions.get(sessionId);
+      if (ffmpeg) {
+        ffmpeg.kill("SIGKILL");
+        this.ongoingSessions.delete(sessionId);
+      }
+      callback();
+    } else {
+      callback();
+    }
+  }
 };
