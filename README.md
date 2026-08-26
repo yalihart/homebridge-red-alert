@@ -1,3 +1,5 @@
+
+
 # 🚨 Homebridge Red Alert Plugin 🚨
 
 **Red Alert** is a Homebridge plugin for real-time civil defense alerts in Israel, supporting Chromecast devices and HomeKit integration. It provides real-time notifications for primary missile alerts, early warnings, and exit (all-clear) notifications via the Tzofar WebSocket API. All alert types are fully configurable with per-device and per-alert time and volume controls.
@@ -213,6 +215,7 @@ Below is a **comprehensive configuration** that demonstrates all features:
 | `alerts`                      | Per-alert-type configuration (see below)                                                                                  |
 | `tzofar`                      | Tzofar WebSocket configuration (usually defaults are fine)                                                                |
 | `serverPort`                  | Port for serving local media (Chromecast)                                                                                 |
+| `baseUrl`                     | Optional base URL override for the media server (auto-detected if omitted)                                               |
 
 #### Per-Alert-Type Configuration (`alerts`)
 
